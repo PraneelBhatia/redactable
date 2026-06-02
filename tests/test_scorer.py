@@ -91,3 +91,12 @@ class TestRegressionGate:
     def test_no_thresholds_means_no_gate(self):
         report = score([([sp(0, 5, EntityType.PERSON)], [])])
         assert report.gate_passed is None
+
+    def test_gate_skips_thresholded_types_absent_from_corpus(self):
+        # EMAIL has gold and is caught; US_SSN is thresholded but the corpus has no SSNs,
+        # so recall is unmeasurable and must NOT count as a failure.
+        gold = [sp(0, 5, EntityType.EMAIL)]
+        pred = [sp(0, 5, EntityType.EMAIL)]
+        report = score([(gold, pred)], thresholds={"EMAIL": 0.9, "US_SSN": 0.99})
+        assert report.gate_passed is True
+        assert report.gate_failures == []

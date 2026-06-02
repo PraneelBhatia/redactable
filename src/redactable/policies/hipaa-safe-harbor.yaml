@@ -1,0 +1,54 @@
+# HIPAA Safe Harbor (45 CFR §164.514(b)(2)) — de-identification by removal of the
+# 18 identifier categories. Default action is MASK (irreversible removal), which is
+# what Safe Harbor requires; use a "limited-dataset" / pseudonymize pack with the
+# `tokenize` action when you need joinable, reversible output instead.
+#
+# NOTE: This pack accelerates de-identification and measures recall. It is not, by
+# itself, a legal determination of de-identification — Safe Harbor also requires
+# "no actual knowledge" that residual information could re-identify an individual.
+name: hipaa-safe-harbor
+version: 1
+jurisdiction: US
+description: >-
+  HIPAA Safe Harbor — removal of the 18 categories of identifiers. Deterministic
+  identifiers are gated at high recall; contextual identifiers (names, locations)
+  at the realistic ceiling of an auditable encoder NER.
+
+default_action: mask
+
+entities:
+  # (A) Names
+  PERSON: { action: mask }
+  # (B) Geographic subdivisions smaller than a state
+  LOCATION: { action: mask }
+  # (C) Dates (other than year) directly related to an individual
+  DATE: { action: mask }
+  # (D) Telephone / (E) Fax numbers
+  PHONE: { action: mask }
+  # (F) Email addresses
+  EMAIL: { action: mask }
+  # (G) Social Security numbers
+  US_SSN: { action: mask }
+  # (J) Account numbers (bank account / routing) and payment cards
+  US_ROUTING: { action: mask }
+  IBAN: { action: mask }
+  CREDIT_CARD: { action: mask }
+  # (N) Web URLs
+  URL: { action: mask }
+  # (O) IP addresses
+  IP_ADDRESS: { action: mask }
+  # (R) Organizations are not a Safe Harbor category on their own, but employer/
+  # facility names frequently co-identify; in scope, not gated.
+  ORG: { action: mask }
+
+# Minimum recall the CI gate enforces. Deterministic, checksum-bearing identifiers
+# are held near-perfect; contextual NER entities at an honest, auditable bar.
+thresholds:
+  US_SSN: 0.99
+  CREDIT_CARD: 0.99
+  IBAN: 0.99
+  EMAIL: 0.98
+  IP_ADDRESS: 0.98
+  PHONE: 0.95
+  PERSON: 0.85
+  LOCATION: 0.80

@@ -119,10 +119,12 @@ def score(
     report = EvalReport(per_entity=per_entity, micro=micro, macro=macro)
 
     if thresholds:
+        # Only gate types the corpus can actually measure (support > 0). A threshold on
+        # an entity type with no gold examples is unmeasurable, not a failure.
         failures = [
-            GateFailure(t, per_entity[t].recall if t in per_entity else 0.0, thr)
+            GateFailure(t, per_entity[t].recall, thr)
             for t, thr in thresholds.items()
-            if (per_entity[t].recall if t in per_entity else 0.0) < thr
+            if t in per_entity and per_entity[t].support > 0 and per_entity[t].recall < thr
         ]
         report.gate_failures = failures
         report.gate_passed = not failures

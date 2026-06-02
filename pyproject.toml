@@ -45,7 +45,7 @@ dev = [
 ]
 
 [project.scripts]
-redactable = "redactable.cli:main"
+redactable = "redactable.cli:run"
 
 [project.urls]
 Homepage = "https://github.com/redactable/redactable"
@@ -54,9 +54,7 @@ Issues = "https://github.com/redactable/redactable/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/redactable"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"policies" = "redactable/policies"
+# Bundled policy packs (*.yaml) live inside the package and are included automatically.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

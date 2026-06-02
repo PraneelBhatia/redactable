@@ -1,0 +1,16 @@
+{"text": "Email the lab report to dana.lee@example.com before noon.", "spans": [{"start": 24, "end": 44, "type": "EMAIL"}]}
+{"text": "Call the clinic at (212) 555-0188 or fax 312-555-0177.", "spans": [{"start": 19, "end": 33, "type": "PHONE"}, {"start": 41, "end": 53, "type": "PHONE"}]}
+{"text": "Patient SSN is 123-45-6789; verify before billing.", "spans": [{"start": 15, "end": 26, "type": "US_SSN"}]}
+{"text": "Charge card 4111 1111 1111 1111 for the copay.", "spans": [{"start": 12, "end": 31, "type": "CREDIT_CARD"}]}
+{"text": "Wire the balance to IBAN DE89370400440532013000 by end of day.", "spans": [{"start": 25, "end": 47, "type": "IBAN"}]}
+{"text": "Server logged a request from 192.168.10.45 during the incident.", "spans": [{"start": 29, "end": 42, "type": "IP_ADDRESS"}]}
+{"text": "Routing number 021000021 is printed on the deposit slip.", "spans": [{"start": 15, "end": 24, "type": "US_ROUTING"}]}
+{"text": "Results are posted at https://patient-portal.example.org/login overnight.", "spans": [{"start": 22, "end": 62, "type": "URL"}]}
+{"text": "Dr. Sarah Chen reviewed the chart this morning.", "spans": [{"start": 4, "end": 14, "type": "PERSON"}]}
+{"text": "The patient was transferred to Boston for the procedure.", "spans": [{"start": 31, "end": 37, "type": "LOCATION"}]}
+{"text": "Records were forwarded to Mercy General Hospital last week.", "spans": [{"start": 26, "end": 48, "type": "ORG"}]}
+{"text": "Reach roberto.alvarez@example.net or call +1 415 555 0143 anytime.", "spans": [{"start": 6, "end": 33, "type": "EMAIL"}, {"start": 42, "end": 57, "type": "PHONE"}]}
+{"text": "Nurse Priya Patel updated the medication list at noon.", "spans": [{"start": 6, "end": 17, "type": "PERSON"}]}
+{"text": "The sample shipped through Chicago and then Denver before arrival.", "spans": [{"start": 27, "end": 34, "type": "LOCATION"}, {"start": 44, "end": 50, "type": "LOCATION"}]}
+{"text": "Billing email admin@hospital.example, card 5500 0055 5555 5559 on file.", "spans": [{"start": 14, "end": 36, "type": "EMAIL"}, {"start": 43, "end": 62, "type": "CREDIT_CARD"}]}
+{"text": "Forward the intake form to intake@clinic.example.org for processing.", "spans": [{"start": 27, "end": 52, "type": "EMAIL"}]}
