@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Models / weights (never commit large binaries)
+*.onnx
+*.task
+*.litertlm
+*.gguf
+models/
+
+# Redactable runtime artifacts (NEVER commit — may contain recovered PII)
+*.keymap.json
+*.audit.json
+.redactable/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
