@@ -14,6 +14,7 @@ drop overlaps so the transformer never corrupts output.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -22,12 +23,16 @@ from redactable.span import Span
 _STRATEGIES = ("mask", "tokenize", "hash")
 
 
-@dataclass
+@dataclass(repr=False)
 class RedactionResult:
     """The output of applying a tokenizer: redacted text plus a (possibly empty) keymap."""
 
     text: str
     keymap: dict[str, str] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        # The keymap re-identifies people; never expose its originals via repr.
+        return f"RedactionResult(text_len={len(self.text)}, keymap=<{len(self.keymap)} entries redacted>)"
 
 
 class Tokenizer:
@@ -50,7 +55,7 @@ class Tokenizer:
         # values reuse the same token across an entire apply() (and across calls if the
         # same Tokenizer instance is reused — enabling cross-document joinability).
         self._counters: dict[str, int] = {}
-        self._tokens: dict[tuple[str, str], str] = {}
+        self._tokens: dict[tuple[str, str, str], str] = {}
 
     def _effective(self, span: Span) -> str:
         strat = self._action_resolver(span) if self._action_resolver else self.strategy
@@ -63,7 +68,9 @@ class Tokenizer:
         if effective == "mask":
             return f"[{etype}]"
 
-        key = (etype, span.text)
+        # Key includes the effective strategy so hash/tokenize can't cross-contaminate
+        # if the same instance is reused with a changed strategy.
+        key = (etype, span.text, effective)
         if key in self._tokens:
             return self._tokens[key]
 
@@ -98,7 +105,14 @@ class Tokenizer:
 
     @staticmethod
     def reverse(text: str, keymap: dict[str, str]) -> str:
-        """Restore original values from a tokenized text using its keymap."""
-        for token, original in keymap.items():
-            text = text.replace(token, original)
-        return text
+        """Restore original values from a tokenized text using its keymap.
+
+        Single-pass simultaneous substitution: each token is replaced exactly once, so a
+        restored value can never be re-consumed by a later token's substitution (which a
+        naive sequential ``str.replace`` loop would do). Longer tokens are tried first to
+        avoid one token being a prefix of another.
+        """
+        if not keymap:
+            return text
+        pattern = re.compile("|".join(re.escape(k) for k in sorted(keymap, key=len, reverse=True)))
+        return pattern.sub(lambda m: keymap[m.group(0)], text)

@@ -110,11 +110,13 @@ def score(
     micro = EntityScore("micro", total_tp, total_fp, total_fn)
 
     # Macro = unweighted mean of per-type metrics (every entity type counts equally).
+    # F1 is the mean of per-type F1s — NOT the harmonic mean of the mean P and mean R,
+    # which inflates the score when precision and recall are asymmetric across types.
     n = len(per_entity) or 1
     macro_p = sum(s.precision for s in per_entity.values()) / n
     macro_r = sum(s.recall for s in per_entity.values()) / n
-    # Store macro as a pseudo-EntityScore is lossy for f1; expose a tiny wrapper instead.
-    macro = _MacroScore(precision=macro_p, recall=macro_r)
+    macro_f1 = sum(s.f1 for s in per_entity.values()) / n
+    macro = _MacroScore(precision=macro_p, recall=macro_r, f1=macro_f1)
 
     report = EvalReport(per_entity=per_entity, micro=micro, macro=macro)
 
@@ -134,13 +136,9 @@ def score(
 
 @dataclass(frozen=True)
 class _MacroScore:
-    """Macro aggregate: precision/recall are means of per-type metrics, not pooled counts."""
+    """Macro aggregate: every field is the unweighted mean of the per-type metric."""
 
     precision: float
     recall: float
+    f1: float = 0.0
     entity_type: str = "macro"
-
-    @property
-    def f1(self) -> float:
-        p, r = self.precision, self.recall
-        return 2 * p * r / (p + r) if (p + r) else 0.0

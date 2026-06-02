@@ -37,7 +37,7 @@ class EntityType(StrEnum):
     ORG = "ORG"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class Span:
     """A single detected entity over a source text, as a half-open ``[start, end)`` range.
 
@@ -69,6 +69,12 @@ class Span:
             )
         if not (0.0 <= self.score <= 1.0):
             raise ValueError(f"span score must be in [0.0, 1.0], got {self.score}")
+
+    def __repr__(self) -> str:
+        # Deliberately omits ``text`` so a Span never leaks raw PII through a repr,
+        # log line, or traceback.
+        valid = "" if self.valid is None else f", valid={self.valid}"
+        return f"Span({self.entity_type}, {self.start}:{self.end}, score={self.score}{valid})"
 
     @property
     def length(self) -> int:

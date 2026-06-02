@@ -40,6 +40,14 @@ EXAMPLES: list[tuple[str, list[tuple[str, str]]]] = [
      [("admin@hospital.example", "EMAIL"), ("5500 0055 5555 5559", "CREDIT_CARD")]),
     ("Forward the intake form to intake@clinic.example.org for processing.",
      [("intake@clinic.example.org", "EMAIL")]),
+    # Hard formats that the first cut silently missed (added after code review) — these
+    # make the recall gate actually exercise compact SSNs, IPv6, grouped IBANs, and
+    # non-NANP phone numbers instead of only the easy cases.
+    ("Export row lists compact SSN 201349876 for reconciliation.", [("201349876", "US_SSN")]),
+    ("Audit log shows a request from 2001:db8::1 overnight.", [("2001:db8::1", "IP_ADDRESS")]),
+    ("Remit to printed IBAN GB82 WEST 1234 5698 7654 32 this week.",
+     [("GB82 WEST 1234 5698 7654 32", "IBAN")]),
+    ("International contact is +44 7911 123456 for the vendor.", [("+44 7911 123456", "PHONE")]),
 ]
 
 

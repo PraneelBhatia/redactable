@@ -98,3 +98,49 @@ class TestMixedAndProvenance:
 
     def test_detector_has_a_name(self):
         assert DeterministicDetector().name == "deterministic"
+
+
+class TestRecallGapsClosed:
+    """Regression tests for formats the first cut silently missed (found by review)."""
+
+    def test_compact_ssn_without_dashes(self):
+        assert EntityType.US_SSN in types_found("SSN 123456789 on file")
+        # the dashed form must still work
+        assert EntityType.US_SSN in types_found("dashed 123-45-6789 here")
+
+    def test_compact_ssn_excludes_invalid_areas(self):
+        assert EntityType.US_SSN not in types_found("000121234")  # area 000
+        assert EntityType.US_SSN not in types_found("900121234")  # area 9xx
+
+    def test_ipv6_addresses_detected(self):
+        for ip in [
+            "2001:db8::1",
+            "fe80::1%eth0",
+            "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+            "::ffff:192.0.2.1",
+        ]:
+            assert EntityType.IP_ADDRESS in types_found(f"host {ip} end"), ip
+
+    def test_ipv6_trailing_period_not_captured(self):
+        assert find_one("ping 2001:db8::1.", EntityType.IP_ADDRESS).text == "2001:db8::1"
+
+    def test_mac_and_clock_time_not_mistaken_for_ipv6(self):
+        assert EntityType.IP_ADDRESS not in types_found("mac 01:23:45:67:89:ab here")
+        assert EntityType.IP_ADDRESS not in types_found("meeting at 12:34:56 today")
+
+    def test_ipv4_still_detected(self):
+        assert find_one("from 192.168.0.1 today", EntityType.IP_ADDRESS).text == "192.168.0.1"
+
+    def test_spaced_grouped_iban_detected_without_swallowing_prose(self):
+        span = find_one("remit to GB82 WEST 1234 5698 7654 32 by Friday.", EntityType.IBAN)
+        assert span.text == "GB82 WEST 1234 5698 7654 32"
+        assert span.valid is True
+
+    def test_international_phone_numbers_detected(self):
+        assert EntityType.PHONE in types_found("ring +44 7911 123456 now")
+        assert EntityType.PHONE in types_found("call +49 30 1234567 please")
+
+    def test_url_trailing_sentence_punctuation_trimmed(self):
+        assert find_one("see https://example.com/path. Next", EntityType.URL).text == (
+            "https://example.com/path"
+        )

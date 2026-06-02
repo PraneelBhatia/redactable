@@ -16,17 +16,26 @@ from datetime import datetime, timezone
 from redactable import __version__
 from redactable.detectors.base import Detector
 from redactable.detectors.deterministic import DeterministicDetector
+from redactable.overlap import resolve_overlaps
 from redactable.policy import Policy
 from redactable.span import Span
 from redactable.tokenization import Tokenizer
 
 
-@dataclass
+@dataclass(repr=False)
 class RedactionOutcome:
     text: str
     spans: list[Span]
     keymap: dict[str, str]
     manifest: dict
+
+    def __repr__(self) -> str:
+        # Never expose raw PII (in spans) or re-identification originals (in keymap).
+        return (
+            f"RedactionOutcome(redactions={len(self.spans)}, "
+            f"types={self.manifest.get('entity_counts', {})}, "
+            f"keymap=<{len(self.keymap)} entries redacted>)"
+        )
 
 
 class Redactor:
@@ -56,21 +65,9 @@ class Redactor:
                 continue
         return spans
 
-    @staticmethod
-    def _resolve(spans: list[Span]) -> list[Span]:
-        """Greedy overlap resolution by preference: checksum-valid, then score, then length."""
-        ranked = sorted(
-            spans, key=lambda s: (-(s.valid is True), -s.score, -s.length, s.start)
-        )
-        chosen: list[Span] = []
-        for span in ranked:
-            if not any(span.overlaps(c) for c in chosen):
-                chosen.append(span)
-        return sorted(chosen, key=lambda s: s.start)
-
     def redact(self, text: str) -> RedactionOutcome:
         in_scope = [s for s in self._collect(text) if self.policy.in_scope(str(s.entity_type))]
-        spans = self._resolve(in_scope)
+        spans = resolve_overlaps(in_scope)
 
         tokenizer = Tokenizer(
             salt=self.salt,
@@ -87,7 +84,9 @@ class Redactor:
             "engine_version": __version__,
             "policy": {"name": self.policy.name, "version": self.policy.version},
             "detectors": [d.name for d in self.detectors],
-            "input_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            # Hash of the REDACTED output, not the raw input: a hash of the original would
+            # be an invertible record of PII for short/predictable inputs.
+            "output_sha256": hashlib.sha256(result.text.encode("utf-8")).hexdigest(),
             "entity_counts": dict(sorted(counts.items())),
             "total_redactions": len(spans),
             "timestamp": datetime.now(timezone.utc).isoformat(),

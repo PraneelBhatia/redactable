@@ -73,3 +73,33 @@ class TestOffsetsAndOrdering:
         spans = [person(0, 5, "Alice"), person(0, 3, "Ali")]  # overlap
         result = Tokenizer(strategy="mask").apply(text, spans)
         assert result.text == "[PERSON]"
+
+
+class TestReverseRobustness:
+    def test_reverse_does_not_re_consume_a_restored_value(self):
+        # A restored original containing another token literal must survive intact.
+        keymap = {"[URL_1]": "http://x.io/[EMAIL_1]", "[EMAIL_1]": "a@b.com"}
+        text = "See [URL_1] and mail [EMAIL_1]"
+        assert Tokenizer.reverse(text, keymap) == "See http://x.io/[EMAIL_1] and mail a@b.com"
+
+    def test_reverse_is_order_independent(self):
+        keymap = {"[PERSON_2]": "[PERSON_1]", "[PERSON_1]": "Alice"}
+        assert Tokenizer.reverse("[PERSON_2] met [PERSON_1]", keymap) == "[PERSON_1] met Alice"
+
+
+class TestStrategyCacheIsolation:
+    def test_same_value_under_different_strategy_is_not_cross_contaminated(self):
+        tok = Tokenizer(strategy="tokenize")
+        span = person(0, 5, "Alice")
+        first = tok.apply("Alice", [span]).text
+        tok.strategy = "hash"
+        second = tok.apply("Alice", [span]).text
+        assert first == "[PERSON_1]"
+        assert second != "[PERSON_1]"  # the hash strategy must not reuse the tokenize token
+        assert second.startswith("[PERSON_")
+
+
+class TestReprSafety:
+    def test_result_repr_hides_keymap_originals(self):
+        result = Tokenizer(strategy="tokenize").apply("Alice", [person(0, 5, "Alice")])
+        assert "Alice" not in repr(result)

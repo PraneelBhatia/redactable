@@ -33,8 +33,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Encoder-NER contextual detector (open model, ONNX/CPU). Kept out of the core
-# so the deterministic engine installs with zero heavy dependencies.
+# Encoder-NER contextual detector. Kept out of the core so the deterministic engine
+# installs with zero heavy dependencies. NOTE: gliner pulls torch + transformers
+# transitively, so this extra is a large (CPU-capable) download — hence opt-in.
+# onnxruntime is pinned to a floor on top of gliner's unversioned requirement.
 ner = [
     "gliner>=0.2.13",
     "onnxruntime>=1.17",

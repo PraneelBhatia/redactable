@@ -72,6 +72,14 @@ class TestAggregation:
         report = score([(gold, pred)])
         assert report.macro.recall == 0.5
 
+    def test_macro_f1_is_mean_of_per_type_f1_not_harmonic_of_means(self):
+        # EMAIL: P=1.0 R=0.5 F1=0.667 ; PHONE: P=0.5 R=1.0 F1=0.667 -> macro F1 = 0.667
+        # (the buggy harmonic-of-means would give 0.75).
+        gold = [sp(0, 5, EntityType.EMAIL), sp(10, 15, EntityType.EMAIL), sp(20, 25, EntityType.PHONE)]
+        pred = [sp(0, 5, EntityType.EMAIL), sp(20, 25, EntityType.PHONE), sp(30, 35, EntityType.PHONE)]
+        report = score([(gold, pred)])
+        assert abs(report.macro.f1 - 2 / 3) < 1e-6
+
 
 class TestRegressionGate:
     def test_gate_fails_when_recall_below_threshold(self):

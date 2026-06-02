@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from redactable.detectors.base import Detector
 from redactable.eval.scorer import EvalReport, score
+from redactable.overlap import resolve_overlaps
 from redactable.span import EntityType, Span
 
 
@@ -48,18 +49,21 @@ def load_corpus(path: str) -> list[Example]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"line {lineno}: invalid JSON: {exc}") from exc
 
-            text = row["text"]
-            spans: list[Span] = []
-            for raw_span in row.get("spans", []):
-                start, end = raw_span["start"], raw_span["end"]
-                if not (0 <= start < end <= len(text)):
-                    raise ValueError(
-                        f"line {lineno}: span out of bounds for text of length "
-                        f"{len(text)}: {raw_span}"
+            try:
+                text = row["text"]
+                spans: list[Span] = []
+                for raw_span in row.get("spans", []):
+                    start, end = raw_span["start"], raw_span["end"]
+                    if not (0 <= start < end <= len(text)):
+                        raise ValueError(
+                            f"line {lineno}: span out of bounds for text of length "
+                            f"{len(text)}: {raw_span}"
+                        )
+                    spans.append(
+                        Span(start, end, _coerce_type(raw_span["type"]), text[start:end])
                     )
-                spans.append(
-                    Span(start, end, _coerce_type(raw_span["type"]), text[start:end])
-                )
+            except KeyError as exc:
+                raise ValueError(f"line {lineno}: missing required field {exc}") from exc
             examples.append(Example(text=text, gold=spans, meta=row.get("meta", {})))
     return examples
 
@@ -84,7 +88,10 @@ def evaluate(
             does not care about, and out-of-scope gold is not counted as missed.
     """
     pairs = [
-        (_restrict(ex.gold, scope), _restrict(detector.detect(ex.text), scope))
+        (
+            _restrict(ex.gold, scope),
+            _restrict(resolve_overlaps(detector.detect(ex.text)), scope),
+        )
         for ex in examples
     ]
     return score(pairs, thresholds=thresholds)

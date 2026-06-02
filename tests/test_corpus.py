@@ -62,6 +62,17 @@ class TestValidation:
         with pytest.raises(ValueError, match="line 2"):
             load_corpus(str(p))
 
+    def test_missing_text_field_raises_with_line_number(self, tmp_path):
+        p = tmp_path / "c.jsonl"
+        p.write_text('{"spans": []}\n')
+        with pytest.raises(ValueError, match="line 1"):
+            load_corpus(str(p))
+
+    def test_missing_span_type_raises_with_line_number(self, tmp_path):
+        p = write_jsonl(tmp_path / "c.jsonl", [{"text": "hi there", "spans": [{"start": 0, "end": 2}]}])
+        with pytest.raises(ValueError, match="line 1"):
+            load_corpus(p)
+
 
 class TestEvaluate:
     def test_evaluate_runs_detector_over_corpus(self, tmp_path):
@@ -75,6 +86,29 @@ class TestEvaluate:
         examples = load_corpus(p)
         report = evaluate(DeterministicDetector(), examples)
         assert report.per_entity["EMAIL"].recall == 1.0
+
+    def test_evaluate_resolves_overlapping_predictions(self, tmp_path):
+        # Eval measures what the pipeline REDACTS, so overlapping candidate spans are
+        # resolved first: a shorter CREDIT_CARD inside a longer valid IBAN is dropped and
+        # must not show up as a spurious false positive.
+        from redactable.span import EntityType, Span
+
+        class TwoOverlap:
+            name = "x"
+
+            def detect(self, text):
+                return [
+                    Span(0, 10, EntityType.IBAN, "x" * 10, valid=True),
+                    Span(2, 8, EntityType.CREDIT_CARD, "x" * 6, valid=True),
+                ]
+
+        p = write_jsonl(
+            tmp_path / "c.jsonl",
+            [{"text": "x" * 10, "spans": [{"start": 0, "end": 10, "type": "IBAN"}]}],
+        )
+        report = evaluate(TwoOverlap(), load_corpus(p))
+        assert "CREDIT_CARD" not in report.per_entity
+        assert report.per_entity["IBAN"].precision == 1.0
 
     def test_evaluate_restricts_to_scope(self, tmp_path):
         # A URL is present and detected, but scope is EMAIL-only -> URL must not appear.

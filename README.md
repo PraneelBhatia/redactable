@@ -80,7 +80,8 @@ Use the reusable GitHub Action to gate PRs:
 - **Deterministic detectors** — email, phone, US SSN, credit card (Luhn), IBAN (MOD-97),
   IPv4/IPv6, US routing (ABA), URL, and more. Confidence is `1.0`/`0.0`, not a guess.
 - **Encoder-NER detector** *(optional `pip install redactable[ner]`)* — PERSON / LOCATION / ORG
-  via GLiNER + ONNX, with a CPU fallback. No mandatory GPU, no multi-GB download for the core.
+  via GLiNER. The deterministic core has **zero heavy dependencies**; the `[ner]` extra pulls
+  PyTorch + transformers transitively (a large, CPU-capable download), so it stays opt-in.
 - **Eval harness** — per-entity precision / recall / F1 over a labeled corpus, with a
   configurable **regression gate** for CI.
 - **Reversible tokenization** — consistent `[TYPE_n]` placeholders, joinable across a document,

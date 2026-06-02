@@ -14,3 +14,7 @@
 {"text": "The sample shipped through Chicago and then Denver before arrival.", "spans": [{"start": 27, "end": 34, "type": "LOCATION"}, {"start": 44, "end": 50, "type": "LOCATION"}]}
 {"text": "Billing email admin@hospital.example, card 5500 0055 5555 5559 on file.", "spans": [{"start": 14, "end": 36, "type": "EMAIL"}, {"start": 43, "end": 62, "type": "CREDIT_CARD"}]}
 {"text": "Forward the intake form to intake@clinic.example.org for processing.", "spans": [{"start": 27, "end": 52, "type": "EMAIL"}]}
+{"text": "Export row lists compact SSN 201349876 for reconciliation.", "spans": [{"start": 29, "end": 38, "type": "US_SSN"}]}
+{"text": "Audit log shows a request from 2001:db8::1 overnight.", "spans": [{"start": 31, "end": 42, "type": "IP_ADDRESS"}]}
+{"text": "Remit to printed IBAN GB82 WEST 1234 5698 7654 32 this week.", "spans": [{"start": 22, "end": 49, "type": "IBAN"}]}
+{"text": "International contact is +44 7911 123456 for the vendor.", "spans": [{"start": 25, "end": 40, "type": "PHONE"}]}
