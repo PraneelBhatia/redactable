@@ -75,6 +75,14 @@ class TestLoadBundled:
         # And carry a meaningful recall threshold for SSNs.
         assert pol.thresholds.get("US_SSN", 0) >= 0.95
 
+    def test_pii_structured_pack_scopes_only_structured_types(self):
+        pol = Policy.load("pii-structured")
+        assert pol.in_scope("US_SSN")
+        assert pol.in_scope("CREDIT_CARD")
+        # No contextual types — this pack is fully satisfiable by the deterministic engine.
+        assert not pol.in_scope("PERSON")
+        assert not pol.in_scope("LOCATION")
+
 
 class TestErrors:
     def test_unknown_pack_raises(self):

@@ -39,20 +39,40 @@ Most PII tools are a pile of regexes or a thin wrapper around an LLM, and neithe
 ```bash
 pip install redactable
 
-# De-identify a file under the HIPAA Safe Harbor policy, emit an audit manifest
-redactable redact notes.txt --policy hipaa-safe-harbor --out notes.redacted.txt --audit
+# De-identify a file and write a reproducible audit manifest alongside it
+redactable redact notes.txt --policy hipaa-safe-harbor --out notes.redacted.txt --audit notes.audit.json
 
-# Prove your engine's recall against a labeled corpus — exits non-zero on regression (CI gate)
-redactable eval --corpus corpus/seed.jsonl --policy hipaa-safe-harbor --gate
+# Add contextual entities (names, locations) with the optional encoder NER
+pip install "redactable[ner]"
+redactable redact notes.txt --policy hipaa-safe-harbor --ner --out notes.redacted.txt
+
+# Prove recall against a labeled corpus — exits non-zero on regression (drop this in CI)
+redactable eval --corpus corpus/seed.jsonl --policy pii-structured --gate
 ```
 
 ```python
 from redactable import Redactor
 
+# The deterministic core (no model, no download) catches structured identifiers:
 r = Redactor.from_policy("hipaa-safe-harbor")
-result = r.redact("Contact Jane Doe at jane@acme.io or 555-0142; card 4111 1111 1111 1111.")
-print(result.text)
-# Contact [PERSON_1] at [EMAIL_1] or [PHONE_1]; card [CREDIT_CARD_1].
+out = r.redact("Email jane@acme.io or call (212) 555-0188; card 4111 1111 1111 1111.")
+print(out.text)
+# Email [EMAIL] or call [PHONE]; card [CREDIT_CARD].
+
+# Names/locations need the optional encoder NER — add it explicitly:
+#   from redactable.detectors.ner import GlinerDetector
+#   r = Redactor.from_policy("hipaa-safe-harbor",
+#                            detectors=[*r.detectors, GlinerDetector()])
+```
+
+Use the reusable GitHub Action to gate PRs:
+
+```yaml
+# .github/workflows/pii-gate.yml
+- uses: redactable/redactable@v0
+  with:
+    corpus: corpus/seed.jsonl
+    policy: pii-structured   # deterministic types only — passes with no model
 ```
 
 ## What's in the box (v0.1)
@@ -65,8 +85,9 @@ print(result.text)
   configurable **regression gate** for CI.
 - **Reversible tokenization** — consistent `[TYPE_n]` placeholders, joinable across a document,
   re-identifiable under a local keymap.
-- **Policy packs** — declarative, versioned YAML. Ships HIPAA Safe Harbor.
-- **CLI + Python library + GitHub Action.**
+- **Policy packs** — declarative, versioned YAML. Ships `hipaa-safe-harbor` (the 18
+  identifiers) and `pii-structured` (deterministic types only, passes with no model).
+- **CLI + Python library + reusable GitHub Action.**
 
 ## What this is *not*
 

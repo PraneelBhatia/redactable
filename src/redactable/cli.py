@@ -11,11 +11,23 @@ import argparse
 import json
 import sys
 
+from redactable.detectors.base import Detector
+from redactable.detectors.composite import CompositeDetector
 from redactable.detectors.deterministic import DeterministicDetector
 from redactable.eval.corpus import evaluate, load_corpus
 from redactable.eval.scorer import EvalReport
 from redactable.policy import Policy
 from redactable.redactor import Redactor
+
+
+def _build_detectors(use_ner: bool) -> list[Detector]:
+    """Deterministic core, plus the optional GLiNER encoder NER when requested."""
+    detectors: list[Detector] = [DeterministicDetector()]
+    if use_ner:
+        from redactable.detectors.ner import GlinerDetector
+
+        detectors.append(GlinerDetector())
+    return detectors
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -35,12 +47,18 @@ def _build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--out", help="write redacted text here (default: stdout)")
     pr.add_argument("--audit", help="write the audit manifest (JSON) here")
     pr.add_argument("--keymap", help="write the re-identification keymap (JSON) here")
+    pr.add_argument(
+        "--ner", action="store_true", help="also run the GLiNER encoder NER (needs the [ner] extra)"
+    )
 
     pe = sub.add_parser("eval", help="score a detector against a labeled corpus")
     pe.add_argument("--corpus", required=True, help="JSONL corpus of labeled examples")
     pe.add_argument("--policy", required=True, help="policy whose scope + thresholds to use")
     pe.add_argument("--gate", action="store_true", help="exit non-zero if recall regresses")
     pe.add_argument("--json", action="store_true", dest="as_json", help="emit a JSON report")
+    pe.add_argument(
+        "--ner", action="store_true", help="benchmark deterministic + GLiNER (needs the [ner] extra)"
+    )
     return parser
 
 
@@ -94,7 +112,7 @@ def _cmd_redact(args: argparse.Namespace) -> int:
         with open(args.input, encoding="utf-8") as fh:
             text = fh.read()
 
-    redactor = Redactor.from_policy(args.policy)
+    redactor = Redactor.from_policy(args.policy, detectors=_build_detectors(args.ner))
     outcome = redactor.redact(text)
 
     if args.out:
@@ -124,9 +142,9 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     policy = Policy.load(args.policy)
     examples = load_corpus(args.corpus)
     scope = set(policy.entities) or None
-    report = evaluate(
-        DeterministicDetector(), examples, thresholds=policy.thresholds, scope=scope
-    )
+    detectors = _build_detectors(args.ner)
+    engine: Detector = CompositeDetector(detectors) if len(detectors) > 1 else detectors[0]
+    report = evaluate(engine, examples, thresholds=policy.thresholds, scope=scope)
 
     if args.as_json:
         print(json.dumps(_report_to_dict(report), indent=2))

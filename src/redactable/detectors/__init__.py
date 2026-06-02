@@ -5,6 +5,10 @@ The deterministic detector is always available. The encoder-NER detector lives i
 """
 
 from redactable.detectors.base import Detector
+from redactable.detectors.composite import CompositeDetector
 from redactable.detectors.deterministic import DeterministicDetector
 
-__all__ = ["Detector", "DeterministicDetector"]
+# GlinerDetector intentionally not imported here — importing it is cheap (the heavy
+# gliner dependency loads lazily), but keeping it explicit signals it's the optional tier.
+
+__all__ = ["Detector", "CompositeDetector", "DeterministicDetector"]

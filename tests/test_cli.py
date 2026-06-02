@@ -4,7 +4,10 @@
 process. Documented codes: 0 ok, 1 runtime error, 3 eval-gate failure.
 """
 
+import importlib.util
 import json
+
+import pytest
 
 from redactable.cli import main
 
@@ -75,3 +78,14 @@ class TestEval:
         )
         rc = main(["eval", "--corpus", corpus, "--policy", "hipaa-safe-harbor", "--gate"])
         assert rc == 3
+
+    def test_ner_flag_without_extra_errors_cleanly(self, tmp_path, capsys):
+        if importlib.util.find_spec("gliner") is not None:
+            pytest.skip("gliner installed; the missing-extra error path can't be exercised")
+        corpus = write_corpus(
+            tmp_path / "c.jsonl",
+            [{"text": "ping a@b.com", "spans": [{"start": 5, "end": 12, "type": "EMAIL"}]}],
+        )
+        rc = main(["eval", "--corpus", corpus, "--policy", "hipaa-safe-harbor", "--ner"])
+        assert rc == 1
+        assert "redactable[ner]" in capsys.readouterr().err

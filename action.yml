@@ -1,0 +1,51 @@
+# Reusable GitHub Action: fail a build when PII de-identification recall regresses.
+#
+#   - uses: redactable/redactable@v0
+#     with:
+#       corpus: corpus/seed.jsonl
+#       policy: pii-structured
+#
+name: "Redactable PII Recall Gate"
+description: "Fail the build if de-identification recall drops below a policy's thresholds."
+branding:
+  icon: "shield"
+  color: "purple"
+inputs:
+  corpus:
+    description: "Path to a labeled JSONL corpus to score against."
+    required: true
+  policy:
+    description: "Bundled policy name (e.g. pii-structured, hipaa-safe-harbor) or path to a YAML pack."
+    required: false
+    default: "pii-structured"
+  ner:
+    description: "Also run the GLiNER encoder NER (installs the [ner] extra)."
+    required: false
+    default: "false"
+  python-version:
+    description: "Python version to run on."
+    required: false
+    default: "3.12"
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install Redactable
+      shell: bash
+      run: |
+        if [ "${{ inputs.ner }}" = "true" ]; then
+          pip install "redactable[ner]"
+        else
+          pip install redactable
+        fi
+    - name: Run recall gate
+      shell: bash
+      run: |
+        redactable eval \
+          --corpus "${{ inputs.corpus }}" \
+          --policy "${{ inputs.policy }}" \
+          ${{ inputs.ner == 'true' && '--ner' || '' }} \
+          --gate

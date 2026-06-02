@@ -1,0 +1,31 @@
+# Structured identifiers only — every type here is caught deterministically by regex +
+# checksum, so this pack is fully satisfiable by the core engine with no model and no
+# heavy dependency. Ideal as a CI gate ("no raw structured PII leaves this pipeline")
+# and as the always-passing baseline the deterministic engine is benchmarked against.
+name: pii-structured
+version: 1
+jurisdiction: ""
+description: >-
+  Deterministic, checksum-backed structured identifiers (emails, phones, SSNs, payment
+  cards, IBANs, IPs, routing numbers, URLs). No contextual NER required.
+
+default_action: mask
+
+entities:
+  EMAIL: { action: mask }
+  PHONE: { action: mask }
+  US_SSN: { action: mask }
+  CREDIT_CARD: { action: mask }
+  IBAN: { action: mask }
+  IP_ADDRESS: { action: mask }
+  US_ROUTING: { action: mask }
+  URL: { action: mask }
+
+thresholds:
+  EMAIL: 0.98
+  US_SSN: 0.99
+  CREDIT_CARD: 0.99
+  IBAN: 0.99
+  IP_ADDRESS: 0.98
+  PHONE: 0.95
+  US_ROUTING: 0.95
