@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>REDACTABLE — scrub before you talk to an LLM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Special+Elite&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #0b0b0c;
+        --panel: #141416;
+        --line: #2a2a2e;
+        --paper: #efe9da;
+        --paper-line: #d9cfb8;
+        --paper-ink: #1d1a14;
+        --red: #d2332b;
+        --amber: #e0a32e;
+        --green: #3fae6b;
+        --muted: #8a8782;
+        --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+        --type: "Special Elite", var(--mono);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: var(--ink);
+        color: #e7e4dd;
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.55;
+        min-height: 100vh;
+        /* faint scanlines + grain for the surveillance-terminal feel */
+        background-image: repeating-linear-gradient(
+          0deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 3px
+        );
+      }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+
+      /* ---- masthead ---- */
+      header {
+        border: 1px solid var(--line);
+        border-bottom: 3px solid var(--red);
+        background: linear-gradient(180deg, #161618, #0e0e10);
+        padding: 22px 26px;
+        position: relative;
+        overflow: hidden;
+      }
+      .kicker {
+        font-family: var(--mono);
+        letter-spacing: 0.42em;
+        text-transform: uppercase;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      h1 {
+        font-family: var(--type);
+        font-weight: 400;
+        font-size: clamp(30px, 5vw, 52px);
+        margin: 6px 0 4px;
+        letter-spacing: 0.04em;
+      }
+      h1 .bar {
+        background: var(--paper-ink);
+        color: transparent;
+        padding: 0 0.12em;
+        border-radius: 1px;
+      }
+      .tagline { color: #c8c4ba; max-width: 60ch; }
+      .stamp {
+        position: absolute;
+        top: 18px;
+        right: 22px;
+        font-family: var(--type);
+        color: var(--red);
+        border: 3px double var(--red);
+        padding: 4px 12px;
+        transform: rotate(7deg);
+        letter-spacing: 0.18em;
+        font-size: 15px;
+        opacity: 0.9;
+        text-transform: uppercase;
+      }
+
+      /* ---- status strip ---- */
+      .status {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        border: 1px solid var(--line);
+        border-top: none;
+        padding: 10px 26px;
+        background: #0e0e10;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+      .dot.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+      .dot.no { background: var(--muted); }
+      .dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+
+      /* ---- grid ---- */
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+      @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+      .card { border: 1px solid var(--line); background: var(--panel); }
+      .card > .hd {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 9px 14px; border-bottom: 1px solid var(--line);
+        font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+      }
+      textarea {
+        width: 100%; min-height: 200px; resize: vertical; border: none; outline: none;
+        background: transparent; color: #ece9e1; font-family: var(--mono); font-size: 14px;
+        padding: 16px; line-height: 1.6;
+      }
+      textarea::placeholder { color: #55524c; }
+
+      /* ---- the document / redaction view ---- */
+      .doc {
+        background: var(--paper);
+        color: var(--paper-ink);
+        padding: 22px 24px;
+        min-height: 120px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background-image: repeating-linear-gradient(
+          0deg, transparent 0 27px, var(--paper-line) 27px 28px
+        );
+        line-height: 28px;
+      }
+      .doc .empty { color: #9a917c; font-style: italic; }
+      mark.rb {
+        position: relative; color: transparent; background: transparent;
+        border-radius: 1px; padding: 0 1px; cursor: help;
+      }
+      mark.rb .cover {
+        position: absolute; inset: 0; background: var(--paper-ink);
+        transform: scaleX(0); transform-origin: left center;
+        animation: slam 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        animation-delay: calc(var(--i, 0) * 55ms);
+        border-radius: 1px;
+      }
+      mark.rb .tag {
+        position: absolute; inset: 0; display: grid; place-items: center;
+        color: var(--paper); font-size: 9px; letter-spacing: 0.12em; font-weight: 700;
+        opacity: 0; animation: fadein 0.2s ease forwards;
+        animation-delay: calc(var(--i, 0) * 55ms + 0.3s);
+        pointer-events: none; white-space: nowrap; overflow: hidden;
+      }
+      mark.rb:hover .cover { background: var(--red); }
+      @keyframes slam { to { transform: scaleX(1); } }
+      @keyframes fadein { to { opacity: 0.85; } }
+
+      /* ---- controls ---- */
+      .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; }
+      button {
+        font-family: var(--mono); font-weight: 700; font-size: 12px; letter-spacing: 0.1em;
+        text-transform: uppercase; cursor: pointer; padding: 11px 18px; border-radius: 2px;
+        border: 1px solid var(--line); background: #1b1b1e; color: #ece9e1; transition: 0.15s;
+      }
+      button:hover { border-color: #4a4a50; transform: translateY(-1px); }
+      button.primary { background: var(--red); border-color: var(--red); color: #fff; }
+      button.primary:hover { background: #e23c34; }
+      button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+      label.opt { font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+      /* ---- stats ---- */
+      .stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; min-height: 30px; }
+      .chip {
+        border: 1px solid var(--line); padding: 4px 10px; border-radius: 2px; font-size: 11px;
+        letter-spacing: 0.06em; background: #0e0e10;
+      }
+      .chip b { color: var(--red); }
+
+      /* ---- gemma panel ---- */
+      .gemma { border: 1px solid var(--line); border-left: 3px solid var(--amber); background: var(--panel); margin-top: 18px; }
+      .gemma .bd { padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+      .gemma p { margin: 0 0 4px; color: #c8c4ba; font-size: 12.5px; }
+      .gemma .note { color: var(--muted); font-size: 11px; }
+      input[type="file"] { font-family: var(--mono); font-size: 11px; color: var(--muted); max-width: 260px; }
+      #gemma-status { font-size: 11px; color: var(--amber); letter-spacing: 0.04em; }
+      footer { margin-top: 30px; color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
+      a { color: var(--amber); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="kicker">Local PII Filter · Open Source · Apache-2.0</div>
+        <h1>RE<span class="bar">DACT</span>ABLE</h1>
+        <div class="tagline">
+          Scrub names, SSNs, cards, emails, IBANs and IPs out of your text
+          <em>before</em> you paste it into ChatGPT, Claude, or Gemini. Everything runs in
+          this tab — your secrets never touch a server.
+        </div>
+        <div class="stamp">Confidential</div>
+      </header>
+
+      <div class="status">
+        <span><span class="dot ok" id="d-local"></span>processing: in-browser only</span>
+        <span><span class="dot" id="d-net"></span><span id="net-label">network: —</span></span>
+        <span><span class="dot" id="d-gpu"></span><span id="gpu-label">webgpu: checking…</span></span>
+        <span><span class="dot ok"></span>deterministic engine: ready</span>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="hd"><span>① Paste your text</span><span id="in-count">0 chars</span></div>
+          <textarea id="input" spellcheck="false" placeholder="e.g. Hi, I'm Dana Lee — my SSN is 123-45-6789, card 4111 1111 1111 1111, reach me at dana@example.com or +44 7911 123456."></textarea>
+        </div>
+        <div class="card">
+          <div class="hd"><span>② Safe to send</span><button id="copy">Copy</button></div>
+          <textarea id="output" readonly spellcheck="false" placeholder="Redacted text appears here…"></textarea>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="scrub">▸ Scrub now</button>
+        <label class="opt"><input type="checkbox" id="numbered" checked /> numbered tokens ([EMAIL_1])</label>
+        <span style="flex: 1"></span>
+        <button id="clear">Clear</button>
+      </div>
+
+      <div class="stats" id="stats"></div>
+
+      <div class="card" style="margin-top: 18px">
+        <div class="hd"><span>③ The redacted dossier</span><span class="note" style="text-transform:none;letter-spacing:0">hover a bar to inspect</span></div>
+        <div class="doc" id="doc"><span class="empty">Your text, with detected identifiers struck out, appears here.</span></div>
+      </div>
+
+      <div class="gemma">
+        <div class="hd" style="border:none;padding:12px 16px 0">④ Optional: Gemma deep scan (local, for names)</div>
+        <div class="bd">
+          <div style="flex:1 1 320px">
+            <p>Structured IDs are caught by math. <b>Names &amp; places</b> need a model — run an open
+              <b>Gemma&nbsp;4</b> on your GPU, fully local. Nothing is uploaded.</p>
+            <p class="note">Auto path downloads <code>onnx-community/gemma-4-E2B-it-ONNX</code> via
+              Transformers.js (~GB, cached after first run). Or load a MediaPipe <code>.task</code> file.</p>
+          </div>
+          <button id="deepscan-auto" disabled>▾ Load Gemma-4 (WebGPU)</button>
+          <span style="color:var(--muted);font-size:11px">or</span>
+          <input type="file" id="model-file" accept=".task,.litertlm,.bin" />
+          <button id="deepscan-file" disabled>Load file &amp; scan</button>
+          <span id="gemma-status">idle</span>
+        </div>
+      </div>
+
+      <footer>
+        Redactable · deterministic-first PII de-identification you can prove ·
+        the same engine ships as a Python library, CLI &amp; CI gate.
+      </footer>
+    </div>
+
+    <script type="module">
+      import { scrub } from "./redactable.js";
+      import { GemmaScanner, webgpuAvailable } from "./gemma.js";
+
+      const $ = (id) => document.getElementById(id);
+      const input = $("input"), output = $("output"), doc = $("doc"), stats = $("stats");
+      let extraSpans = []; // contextual spans from Gemma
+      let scanner = null;
+
+      // ---- environment indicators ----
+      const online = navigator.onLine;
+      $("d-net").className = "dot " + (online ? "warn" : "ok");
+      $("net-label").textContent = "network: " + (online ? "available (unused)" : "offline ✓");
+      if (webgpuAvailable()) {
+        $("d-gpu").className = "dot ok";
+        $("gpu-label").textContent = "webgpu: available";
+        $("deepscan-auto").disabled = false;
+        $("deepscan-file").disabled = false;
+      } else {
+        $("d-gpu").className = "dot no";
+        $("gpu-label").textContent = "webgpu: unavailable (deep scan off)";
+      }
+
+      // ---- core render ----
+      const TYPES = ["EMAIL","PHONE","US_SSN","CREDIT_CARD","IBAN","IP_ADDRESS","US_ROUTING","URL","PERSON","LOCATION","ORG"];
+      function esc(s){ return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+      function render() {
+        const text = input.value;
+        $("in-count").textContent = text.length + " chars";
+        const result = scrub(text, { extraSpans, numbered: $("numbered").checked });
+        output.value = result.text;
+
+        // annotated original with animated redaction bars
+        if (!text) { doc.innerHTML = '<span class="empty">Your text, with detected identifiers struck out, appears here.</span>'; }
+        else {
+          const spans = result.spans;
+          let html = "", cursor = 0;
+          spans.forEach((s, i) => {
+            html += esc(text.slice(cursor, s.start));
+            const orig = esc(s.text).replace(/"/g, "&quot;");
+            html += `<mark class="rb" style="--i:${i}" title="${s.type} · ${orig}">` +
+                    `<span class="cover"></span><span class="tag">${s.type}</span>${esc(s.text)}</mark>`;
+            cursor = s.end;
+          });
+          html += esc(text.slice(cursor));
+          doc.innerHTML = html || '<span class="empty">No identifiers detected.</span>';
+        }
+
+        // stats
+        stats.innerHTML = "";
+        const total = result.spans.length;
+        const lead = document.createElement("div");
+        lead.className = "chip";
+        lead.innerHTML = `<b>${total}</b> identifier${total===1?"":"s"} struck`;
+        stats.appendChild(lead);
+        TYPES.forEach((t) => {
+          if (result.counts[t]) {
+            const c = document.createElement("div");
+            c.className = "chip";
+            c.innerHTML = `${t} <b>${result.counts[t]}</b>`;
+            stats.appendChild(c);
+          }
+        });
+      }
+
+      $("scrub").onclick = render;
+      $("numbered").onchange = render;
+      input.addEventListener("input", () => { extraSpans = []; render(); });
+      $("clear").onclick = () => { input.value = ""; extraSpans = []; render(); };
+      $("copy").onclick = async () => {
+        try { await navigator.clipboard.writeText(output.value); $("copy").textContent = "Copied ✓"; }
+        catch { output.select(); document.execCommand("copy"); $("copy").textContent = "Copied ✓"; }
+        setTimeout(() => ($("copy").textContent = "Copy"), 1400);
+      };
+
+      // ---- gemma deep scan ----
+      async function deepScan(backend, source) {
+        const buttons = [$("deepscan-auto"), $("deepscan-file")];
+        buttons.forEach((b) => (b.disabled = true));
+        try {
+          if (!scanner || scanner.backend !== backend) scanner = new GemmaScanner({ backend });
+          if (!scanner.ready) await scanner.load(source, (m) => ($("gemma-status").textContent = m));
+          $("gemma-status").textContent = "scanning for names…";
+          extraSpans = await scanner.findEntities(input.value);
+          render();
+          $("gemma-status").textContent = `Gemma added ${extraSpans.length} contextual span(s) — locally.`;
+        } catch (e) {
+          $("gemma-status").textContent = "error: " + e.message;
+        } finally {
+          buttons.forEach((b) => (b.disabled = false));
+        }
+      }
+      $("deepscan-auto").onclick = () => deepScan("transformers", null);
+      $("deepscan-file").onclick = () => {
+        const f = $("model-file").files[0];
+        if (!f) { $("gemma-status").textContent = "pick a Gemma .task file first"; return; }
+        deepScan("mediapipe", f);
+      };
+
+      render();
+    </script>
+  </body>
+</html>

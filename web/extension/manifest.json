@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Redactable — scrub before you prompt",
+  "version": "0.1.0",
+  "description": "Strip PII out of text before you paste it into an LLM. Runs locally; nothing is uploaded.",
+  "action": {
+    "default_title": "Redactable",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["clipboardWrite"],
+  "icons": {}
+}

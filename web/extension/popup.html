@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 360px; margin: 0; font-family: ui-monospace, "JetBrains Mono", monospace; background: #141416; color: #e7e4dd; }
+      header { background: #0e0e10; border-bottom: 2px solid #d2332b; padding: 10px 12px; font-size: 13px; letter-spacing: 0.06em; }
+      .b { background: #1d1a14; color: transparent; padding: 0 3px; }
+      main { padding: 12px; }
+      textarea { width: 100%; box-sizing: border-box; min-height: 90px; background: #0e0e10; color: #ece9e1; border: 1px solid #2a2a2e; border-radius: 3px; font: inherit; padding: 8px; resize: vertical; }
+      .row { display: flex; gap: 8px; margin: 8px 0; }
+      button { flex: 1; font: inherit; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; padding: 9px; border-radius: 3px; border: 1px solid #2a2a2e; background: #1b1b1e; color: #ece9e1; cursor: pointer; }
+      button.primary { background: #d2332b; border-color: #d2332b; color: #fff; }
+      .stats { font-size: 11px; color: #8a8782; min-height: 16px; }
+    </style>
+  </head>
+  <body>
+    <header>RE<span class="b">DACT</span>ABLE · local PII filter</header>
+    <main>
+      <textarea id="in" placeholder="Paste text to scrub…"></textarea>
+      <div class="row">
+        <button class="primary" id="scrub">Scrub</button>
+        <button id="copy">Copy safe text</button>
+      </div>
+      <textarea id="out" readonly placeholder="Redacted output…"></textarea>
+      <div class="stats" id="stats"></div>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>
