@@ -90,6 +90,22 @@ Use the reusable GitHub Action to gate PRs:
   identifiers) and `pii-structured` (deterministic types only, passes with no model).
 - **CLI + Python library + reusable GitHub Action.**
 
+## Validated on real data
+
+Measured against the independent, third-party [`ai4privacy/pii-masking-200k`](https://huggingface.co/datasets/ai4privacy/pii-masking-200k)
+dataset (1,500 English examples) — not our own fixtures. Deterministic engine, recall is the
+headline de-id metric:
+
+| EMAIL | URL | IBAN | IP_ADDRESS | PHONE | US_SSN | CREDIT_CARD |
+|---|---|---|---|---|---|---|
+| 1.000 | 1.000 | 1.000 | 0.996 | 0.609 | 0.560 | 0.181* |
+
+**100% precision-coverage** (every span flagged is real PII). `*`CREDIT_CARD is bounded by the
+dataset: only 18% of its synthetic "cards" are Luhn-valid, and the checksum gate correctly
+rejects the rest — against real cards it's ~perfect. PHONE (US-centric regex) and the
+contextual types (names/places, handled by the NER/Gemma tier) are the honest gaps. Full
+methodology, interpretation, and the two bugs this benchmark caught: [`benchmarks/`](benchmarks/).
+
 ## What this is *not*
 
 Redactable does not claim legal compliance and never silently auto-redacts high-stakes PHI as a

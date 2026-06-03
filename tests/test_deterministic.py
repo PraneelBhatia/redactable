@@ -144,3 +144,18 @@ class TestRecallGapsClosed:
         assert find_one("see https://example.com/path. Next", EntityType.URL).text == (
             "https://example.com/path"
         )
+
+    def test_ipv4_at_end_of_sentence_detected(self):
+        # Found via the ai4privacy benchmark: an IPv4 ending a sentence was being dropped.
+        assert find_one("from 215.114.180.213. As noted", EntityType.IP_ADDRESS).text == (
+            "215.114.180.213"
+        )
+        assert find_one("logged 88.129.163.16.", EntityType.IP_ADDRESS).text == "88.129.163.16"
+
+    def test_ipv4_not_partially_matched_in_five_group(self):
+        # A malformed 5-group dotted number must not yield a partial IPv4.
+        assert EntityType.IP_ADDRESS not in types_found("build 1.2.3.4.5 here")
+
+    def test_ssn_space_separated_detected(self):
+        # ai4privacy includes space-separated US SSNs (e.g. "838 44 5162").
+        assert find_one("ssn 838 44 5162 on file", EntityType.US_SSN).text == "838 44 5162"

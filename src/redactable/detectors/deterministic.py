@@ -69,11 +69,11 @@ _RULES: tuple[_Rule, ...] = (
         re.compile(r"(?<!\d)\+(?!1\b)[1-9]\d{0,3}(?:[\s.\-]?\d){6,14}(?!\d)"),
     ),
     _Rule(
-        # SSN, dashed or compact, with SSA-invalid area/group/serial ranges excluded.
+        # SSN: dash-, space-, or no-separator, with SSA-invalid area/group/serial excluded.
         EntityType.US_SSN,
         re.compile(
             r"(?<!\d)(?!000|666|9\d\d)\d{3}"
-            r"(?:-(?!00)\d{2}-(?!0000)\d{4}|(?!00)\d{2}(?!0000)\d{4})(?!\d)"
+            r"(?:[- ](?!00)\d{2}[- ](?!0000)\d{4}|(?!00)\d{2}(?!0000)\d{4})(?!\d)"
         ),
     ),
     _Rule(
@@ -98,9 +98,11 @@ _RULES: tuple[_Rule, ...] = (
         validator=iban_valid,
     ),
     _Rule(
+        # IPv4. Trailing boundary rejects a continuing digit or ".digit" (so it won't take
+        # a partial octet out of a longer dotted run) but ALLOWS a sentence-ending period.
         EntityType.IP_ADDRESS,
         re.compile(
-            r"(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\d.])"
+            r"(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d)(?!\.\d)"
         ),
     ),
     _Rule(
