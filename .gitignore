@@ -34,3 +34,6 @@ models/
 
 # Playwright MCP test artifacts
 .playwright-mcp/
+
+# benchmark sample (derived data, do not commit)
+web/bench_sample.json

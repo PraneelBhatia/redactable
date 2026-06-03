@@ -55,6 +55,31 @@ span. It redacts real PII, not noise.
 - **Contextual (names/places/orgs): 1154 spans, out of scope** for the deterministic tier —
   handled by the optional NER/Gemma layer (see `web/` for the in-browser Gemma-4 demo).
 
+## Gemma-4 contextual tier (in-browser, WebGPU)
+
+The deterministic tier scores **0.0** on names/places/orgs by design — there is no checksum
+for "is this a person". Those are handled by the optional NER/Gemma tier. To validate it, the
+**actual in-browser Gemma-4 path** (`web/gemma.js` → `onnx-community/gemma-4-E2B-it-ONNX`,
+Transformers.js + WebGPU) was run over 25 real ai4privacy examples (35 gold contextual spans),
+mapping `FIRSTNAME/LASTNAME/MIDDLENAME→PERSON`, `CITY/STATE/COUNTY/STREET→LOCATION`,
+`COMPANYNAME→ORG`. Recall (granularity-tolerant overlap — a full-name prediction credits both
+the first- and last-name gold spans):
+
+| Gemma-4 (WebGPU) | recall | precision* | gold |
+|---|---|---|---|
+| PERSON | **1.000** (24/24) | 0.83 | 24 |
+| LOCATION | **1.000** (10/10) | 0.83 | 10 |
+| ORG | 0.000 (0/1) | — | 1 |
+
+So **deterministic (structured) + Gemma-4 (contextual)** together cover the dataset: the part
+deterministic can't touch, Gemma catches at ~100% recall on this sample.
+
+Caveats (kept honest): small sample (25 examples); **ORG has a single gold span** so its number
+is not meaningful; `*`precision is a *lower bound* — some Gemma "false positives" are real
+entities of types not mapped here (usernames, job titles), i.e. real PII under a different label.
+This was run live via the browser path (verified end-to-end), not a mock. A larger, automated
+sweep is future work.
+
 ### Bugs this benchmark found and fixed
 
 1. **IPv4 at end of a sentence** (`...213.`) was dropped — the trailing boundary rejected a
