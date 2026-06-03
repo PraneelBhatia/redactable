@@ -75,6 +75,27 @@ Use the reusable GitHub Action to gate PRs:
     policy: pii-structured   # deterministic types only — passes with no model
 ```
 
+## Names & places, in any runtime
+
+Structured PII is caught by math everywhere. **Contextual** PII (names, places, orgs) has no
+checksum, so it needs a model — and the engine swaps in whichever model fits the runtime,
+behind one `Detector` interface:
+
+```bash
+# Recommended for CLI/CI/server: GLiNER — an encoder NER (auditable, CPU, can't hallucinate)
+pip install "redactable[ner]"
+redactable redact notes.txt --policy hipaa-safe-harbor --ner
+
+# If you'd rather run Gemma locally (parity with the browser): point at any OpenAI-compatible
+# server, e.g. Ollama — `ollama run gemma3` — text never leaves your machine
+redactable redact notes.txt --policy hipaa-safe-harbor --llm --llm-model gemma3
+
+# In the browser: Gemma-4 on WebGPU (see web/) — auto-downloads, runs in the tab
+```
+
+Same policies, same eval harness, same audit trail — only the contextual `Detector` changes.
+A missing/unreachable model degrades gracefully: the deterministic core still runs.
+
 ## What's in the box (v0.1)
 
 - **Deterministic detectors** — email, phone, US SSN, credit card (Luhn), IBAN (MOD-97),

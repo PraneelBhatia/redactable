@@ -20,13 +20,26 @@ from redactable.policy import Policy
 from redactable.redactor import Redactor
 
 
-def _build_detectors(use_ner: bool) -> list[Detector]:
-    """Deterministic core, plus the optional GLiNER encoder NER when requested."""
+def _build_detectors(
+    use_ner: bool = False,
+    use_llm: bool = False,
+    llm_model: str = "gemma3",
+    llm_url: str = "http://localhost:11434/v1",
+) -> list[Detector]:
+    """Deterministic core, plus optional contextual tiers when requested.
+
+    --ner adds the GLiNER encoder (recommended: auditable, CPU, non-hallucinating).
+    --llm adds a local generative LLM (e.g. Gemma via Ollama) for parity with the browser.
+    """
     detectors: list[Detector] = [DeterministicDetector()]
     if use_ner:
         from redactable.detectors.ner import GlinerDetector
 
         detectors.append(GlinerDetector())
+    if use_llm:
+        from redactable.detectors.llm import LlmDetector
+
+        detectors.append(LlmDetector(model=llm_model, base_url=llm_url))
     return detectors
 
 EXIT_OK = 0
@@ -50,6 +63,13 @@ def _build_parser() -> argparse.ArgumentParser:
     pr.add_argument(
         "--ner", action="store_true", help="also run the GLiNER encoder NER (needs the [ner] extra)"
     )
+    pr.add_argument(
+        "--llm", action="store_true", help="also run a local LLM (e.g. Gemma via Ollama) for names/places"
+    )
+    pr.add_argument("--llm-model", default="gemma3", help="LLM model name (default: gemma3)")
+    pr.add_argument(
+        "--llm-url", default="http://localhost:11434/v1", help="OpenAI-compatible base URL"
+    )
 
     pe = sub.add_parser("eval", help="score a detector against a labeled corpus")
     pe.add_argument("--corpus", required=True, help="JSONL corpus of labeled examples")
@@ -58,6 +78,13 @@ def _build_parser() -> argparse.ArgumentParser:
     pe.add_argument("--json", action="store_true", dest="as_json", help="emit a JSON report")
     pe.add_argument(
         "--ner", action="store_true", help="benchmark deterministic + GLiNER (needs the [ner] extra)"
+    )
+    pe.add_argument(
+        "--llm", action="store_true", help="benchmark with a local LLM (e.g. Gemma via Ollama)"
+    )
+    pe.add_argument("--llm-model", default="gemma3", help="LLM model name (default: gemma3)")
+    pe.add_argument(
+        "--llm-url", default="http://localhost:11434/v1", help="OpenAI-compatible base URL"
     )
     return parser
 
@@ -112,7 +139,8 @@ def _cmd_redact(args: argparse.Namespace) -> int:
         with open(args.input, encoding="utf-8") as fh:
             text = fh.read()
 
-    redactor = Redactor.from_policy(args.policy, detectors=_build_detectors(args.ner))
+    detectors = _build_detectors(args.ner, args.llm, args.llm_model, args.llm_url)
+    redactor = Redactor.from_policy(args.policy, detectors=detectors)
     outcome = redactor.redact(text)
 
     if args.out:
@@ -142,7 +170,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     policy = Policy.load(args.policy)
     examples = load_corpus(args.corpus)
     scope = set(policy.entities) or None
-    detectors = _build_detectors(args.ner)
+    detectors = _build_detectors(args.ner, args.llm, args.llm_model, args.llm_url)
     engine: Detector = CompositeDetector(detectors) if len(detectors) > 1 else detectors[0]
     report = evaluate(engine, examples, thresholds=policy.thresholds, scope=scope)
 

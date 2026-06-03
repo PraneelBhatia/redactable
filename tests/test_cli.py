@@ -9,7 +9,21 @@ import json
 
 import pytest
 
-from redactable.cli import main
+from redactable.cli import _build_detectors, main
+
+
+class TestDetectorWiring:
+    def test_llm_flag_adds_llm_detector(self):
+        from redactable.detectors.llm import LlmDetector
+
+        dets = _build_detectors(use_llm=True, llm_model="gemma3", llm_url="http://localhost:11434/v1")
+        assert any(isinstance(d, LlmDetector) for d in dets)
+        # the deterministic core is always present and first
+        assert dets[0].name == "deterministic"
+
+    def test_default_is_deterministic_only(self):
+        dets = _build_detectors()
+        assert len(dets) == 1 and dets[0].name == "deterministic"
 
 
 def write_corpus(path, rows):
