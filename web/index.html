@@ -269,7 +269,11 @@
             <p class="note">Needs WebGPU. Downloads <code>gemma-4-E2B-it-ONNX</code> (~GB, cached after first run).</p>
           </div>
           <button id="deepscan-auto" disabled>▾ Run Gemma-4 locally</button>
+          <button id="dl-pause" style="display:none">⏸ Pause</button>
+          <button id="dl-cancel" style="display:none">✕ Cancel</button>
+          <button id="dl-delete" style="display:none">🗑 Delete model</button>
           <span id="gemma-status">idle</span>
+          <div id="dl-progress" style="flex-basis:100%; height:7px; background:#0e0e10; border:1px solid var(--line); border-radius:4px; overflow:hidden; display:none; margin-top:4px"><div id="dl-bar" style="height:100%; width:0%; background:var(--amber); transition:width .2s"></div></div>
           <details style="flex-basis:100%; margin-top:4px">
             <summary class="note" style="cursor:pointer">advanced: load a MediaPipe .task file instead</summary>
             <div style="display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap">
@@ -289,7 +293,7 @@
 
     <script type="module">
       import { scrub } from "./redactable.js";
-      import { GemmaScanner, webgpuAvailable } from "./gemma.js";
+      import { GemmaScanner, webgpuAvailable, cachedModelBytes, deleteCachedModels } from "./gemma.js";
 
       const $ = (id) => document.getElementById(id);
       const input = $("input"), output = $("output"), doc = $("doc"), stats = $("stats");
@@ -309,6 +313,7 @@
         $("d-gpu").className = "dot no";
         $("gpu-label").textContent = "webgpu: unavailable (deep scan off)";
       }
+      refreshCacheStatus(); // surface a Delete button if a model is already cached
 
       // ---- core render ----
       const TYPES = ["EMAIL","PHONE","US_SSN","CREDIT_CARD","IBAN","IP_ADDRESS","US_ROUTING","URL","PERSON","LOCATION","ORG"];
@@ -369,27 +374,68 @@
         setTimeout(() => ($("copy").textContent = "Copy ⧉"), 1400);
       };
 
-      // ---- gemma deep scan ----
-      async function deepScan(backend, source) {
-        const buttons = [$("deepscan-auto"), $("deepscan-file")];
-        buttons.forEach((b) => (b.disabled = true));
-        try {
-          if (!scanner || scanner.backend !== backend) scanner = new GemmaScanner({ backend });
-          if (!scanner.ready) await scanner.load(source, (m) => ($("gemma-status").textContent = m));
-          $("gemma-status").textContent = "scanning for names…";
-          extraSpans = await scanner.findEntities(input.value);
-          render();
-          $("gemma-status").textContent = `Gemma added ${extraSpans.length} contextual span(s) — locally.`;
-        } catch (e) {
-          $("gemma-status").textContent = "error: " + e.message;
-        } finally {
-          buttons.forEach((b) => (b.disabled = false));
+      // ---- gemma deep scan + download controls ----
+      const mb = (b) => (b / 1048576).toFixed(0);
+      const setStatus = (m) => ($("gemma-status").textContent = m);
+
+      function setDlState(state) {
+        const show = (id, on) => ($(id).style.display = on ? "" : "none");
+        show("deepscan-auto", state === "idle" || state === "paused");
+        $("deepscan-auto").textContent = state === "paused" ? "▾ Resume download" : "▾ Run Gemma-4 locally";
+        show("dl-pause", state === "downloading");
+        show("dl-cancel", state === "downloading" || state === "paused");
+        show("dl-progress", state === "downloading" || state === "paused");
+      }
+
+      async function refreshCacheStatus() {
+        let bytes = 0;
+        try { bytes = await cachedModelBytes(); } catch {}
+        if (bytes > 0) {
+          $("dl-delete").style.display = "";
+          $("dl-delete").textContent = `🗑 Delete model (~${mb(bytes)} MB)`;
+        } else {
+          $("dl-delete").style.display = "none";
         }
       }
+
+      async function deepScan(backend, source) {
+        if (!scanner || scanner.backend !== backend) scanner = new GemmaScanner({ backend });
+        scanner.onStatus = setStatus;
+        scanner.onProgress = (p) => ($("dl-bar").style.width = p + "%");
+        setDlState("downloading");
+        $("deepscan-file").disabled = true;
+        try {
+          if (!scanner.ready) await scanner.load(source);
+          setStatus("scanning for names…");
+          extraSpans = await scanner.findEntities(input.value);
+          render();
+          setStatus(`Gemma added ${extraSpans.length} contextual span(s) — locally.`);
+          setDlState("idle");
+        } catch (e) {
+          if (e && e.reason === "paused") { setDlState("paused"); setStatus("paused — Resume to continue."); }
+          else if (e && e.reason === "cancelled") { setDlState("idle"); setStatus("download cancelled."); }
+          else { setDlState("idle"); setStatus("error: " + e.message); }
+        } finally {
+          $("deepscan-file").disabled = false;
+          refreshCacheStatus();
+        }
+      }
+
       $("deepscan-auto").onclick = () => deepScan("transformers", null);
+      $("dl-pause").onclick = () => scanner && scanner.pause();
+      $("dl-cancel").onclick = () => scanner && scanner.cancel();
+      $("dl-delete").onclick = async () => {
+        $("dl-delete").disabled = true;
+        const freed = await deleteCachedModels();
+        if (scanner) { scanner.model = null; scanner.tokenizer = null; scanner.llm = null; }
+        $("dl-bar").style.width = "0%";
+        setStatus(`deleted cached model — freed ~${mb(freed)} MB.`);
+        $("dl-delete").disabled = false;
+        refreshCacheStatus();
+      };
       $("deepscan-file").onclick = () => {
         const f = $("model-file").files[0];
-        if (!f) { $("gemma-status").textContent = "pick a Gemma .task file first"; return; }
+        if (!f) { setStatus("pick a Gemma .task file first"); return; }
         deepScan("mediapipe", f);
       };
 

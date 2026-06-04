@@ -20,6 +20,24 @@ export const DEFAULT_GEMMA4_MODEL = "onnx-community/gemma-4-E2B-it-ONNX";
 
 const LABELS = { person: "PERSON", location: "LOCATION", organization: "ORG" };
 
+// Persistent fetch hook so we can abort Transformers.js downloads. The library captures
+// `fetch` at import time and may pass its own signal, so we install the hook ONCE, before
+// importing, and merge our signal with theirs. `_activeAbort` is set only during a load.
+let _origFetch = null;
+let _activeAbort = null;
+function installFetchHook() {
+  if (_origFetch || typeof globalThis.fetch !== "function") return;
+  _origFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (input, init = {}) => {
+    if (!_activeAbort) return _origFetch(input, init);
+    let signal = _activeAbort.signal;
+    if (init.signal) {
+      try { signal = AbortSignal.any([init.signal, _activeAbort.signal]); } catch { /* older browsers */ }
+    }
+    return _origFetch(input, { ...init, signal });
+  };
+}
+
 export function webgpuAvailable() {
   return typeof navigator !== "undefined" && "gpu" in navigator;
 }
@@ -41,56 +59,108 @@ export class GemmaScanner {
     this.tokenizer = null;
     this.model = null; // transformers
     this.llm = null; // mediapipe
+    this.onStatus = () => {}; // (message: string)
+    this.onProgress = () => {}; // (percent: 0..100)
+    this._abort = null;
+    this._cancelled = false;
+    this._paused = false;
   }
 
   get ready() {
     return this.model !== null || this.llm !== null;
   }
 
-  async load(source, onStatus = () => {}) {
+  // Stop an in-progress download. cancel() = abandon; pause() = stop, but whole files already
+  // cached are kept, so a later load() resumes from the next file.
+  cancel() { this._cancelled = true; if (this._abort) this._abort.abort(); }
+  pause() { this._paused = true; if (this._abort) this._abort.abort(); }
+
+  async load(source) {
     if (!webgpuAvailable()) {
       throw new Error("WebGPU unavailable — in-browser Gemma needs a WebGPU-capable browser.");
     }
-    return this.backend === "mediapipe"
-      ? this._loadMediapipe(source, onStatus)
-      : this._loadTransformers(onStatus);
+    return this.backend === "mediapipe" ? this._loadMediapipe(source) : this._loadTransformers();
   }
 
-  async _loadTransformers(onStatus) {
-    onStatus("loading Transformers.js runtime…");
+  async _loadTransformers() {
+    this._cancelled = false;
+    this._paused = false;
+    installFetchHook(); // must run before importing so Transformers.js captures the hooked fetch
+    this.onStatus("loading Transformers.js runtime…");
     const { AutoTokenizer, AutoModelForCausalLM } = await import(TRANSFORMERS_CDN);
-    onStatus(`downloading ${this.modelId} (first run only; cached after)…`);
-    this.tokenizer = await AutoTokenizer.from_pretrained(this.modelId);
-    this.model = await AutoModelForCausalLM.from_pretrained(this.modelId, {
-      dtype: "q4",
-      device: "webgpu",
-      progress_callback: (p) => {
-        if (p.status === "progress" && p.file) {
-          onStatus(`downloading ${p.file}: ${Math.round(p.progress || 0)}%`);
-        }
-      },
+
+    // Route this load's downloads through our AbortController.
+    const ctrl = new AbortController();
+    this._abort = ctrl;
+    _activeAbort = ctrl;
+
+    const files = {};
+    const progress = (p) => {
+      if (p.status === "progress" && p.file && p.total) {
+        files[p.file] = { loaded: p.loaded || 0, total: p.total };
+        let loaded = 0, total = 0;
+        for (const k in files) { loaded += files[k].loaded; total += files[k].total; }
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        this.onProgress(pct);
+        this.onStatus(
+          `downloading… ${pct}%  (${(loaded / 1048576).toFixed(0)}/${(total / 1048576).toFixed(0)} MB)`
+        );
+      }
+    };
+
+    // Transformers.js may swallow an aborted fetch and never reject, so we race the load
+    // against the abort signal — cancel/pause rejects load() promptly and the dangling
+    // download (already network-aborted) is ignored.
+    const aborted = new Promise((_, reject) => {
+      ctrl.signal.addEventListener(
+        "abort",
+        () => {
+          const reason = this._cancelled ? "cancelled" : "paused";
+          reject(Object.assign(new Error(reason), { aborted: true, reason }));
+        },
+        { once: true }
+      );
     });
-    onStatus("Gemma-4 ready — running on your GPU, fully local.");
-    return this;
+    const race = (p) => {
+      p.catch(() => {}); // swallow the dangling promise's later rejection
+      return Promise.race([p, aborted]);
+    };
+
+    try {
+      this.onStatus(`downloading ${this.modelId} (first run only; cached after)…`);
+      this.tokenizer = await race(AutoTokenizer.from_pretrained(this.modelId, { progress_callback: progress }));
+      this.model = await race(
+        AutoModelForCausalLM.from_pretrained(this.modelId, { dtype: "q4", device: "webgpu", progress_callback: progress })
+      );
+      this.onProgress(100);
+      this.onStatus("Gemma-4 ready — running on your GPU, fully local.");
+      return this;
+    } catch (e) {
+      if (e && e.aborted) throw e;
+      if (this._cancelled || this._paused || (e && e.name === "AbortError")) {
+        const reason = this._cancelled ? "cancelled" : "paused";
+        throw Object.assign(new Error(reason), { aborted: true, reason });
+      }
+      throw e;
+    } finally {
+      _activeAbort = null;
+      this._abort = null;
+    }
   }
 
-  async _loadMediapipe(source, onStatus) {
-    onStatus("loading MediaPipe runtime…");
+  async _loadMediapipe(source) {
+    this.onStatus("loading MediaPipe runtime…");
     const { FilesetResolver, LlmInference } = await import(MEDIAPIPE_CDN);
     const fileset = await FilesetResolver.forGenAiTasks(MEDIAPIPE_WASM);
     const baseOptions =
       typeof source === "string"
         ? { modelAssetPath: source }
         : { modelAssetBuffer: (await source.stream()).getReader() };
-    onStatus("loading Gemma weights (first run can be slow)…");
+    this.onStatus("loading Gemma weights (first run can be slow)…");
     this.llm = await LlmInference.createFromOptions(fileset, {
-      baseOptions,
-      maxTokens: 1024,
-      temperature: 0.0,
-      topK: 1,
-      randomSeed: 1,
+      baseOptions, maxTokens: 1024, temperature: 0.0, topK: 1, randomSeed: 1,
     });
-    onStatus("Gemma ready — running locally on your GPU.");
+    this.onStatus("Gemma ready — running locally on your GPU.");
     return this;
   }
 
@@ -177,4 +247,32 @@ export function spansFromModelJson(raw, text) {
     spans.push({ start: idx, end: idx + value.length, type, text: value, valid: null, score: 0.75 });
   }
   return spans;
+}
+
+// ---- cached-model management (Transformers.js stores model files in the Cache Storage API) ----
+
+export const MODEL_CACHE = "transformers-cache";
+
+// Approximate bytes of cached model files (from content-length headers — no blob reads).
+export async function cachedModelBytes() {
+  if (typeof caches === "undefined") return 0;
+  if (!(await caches.keys()).includes(MODEL_CACHE)) return 0;
+  const cache = await caches.open(MODEL_CACHE);
+  let bytes = 0;
+  for (const req of await cache.keys()) {
+    const resp = await cache.match(req);
+    const len = resp && resp.headers.get("content-length");
+    if (len) bytes += parseInt(len, 10);
+  }
+  return bytes;
+}
+
+// Delete cached model weights to reclaim disk. Returns the bytes freed.
+export async function deleteCachedModels() {
+  if (typeof caches === "undefined") return 0;
+  const freed = await cachedModelBytes();
+  for (const name of await caches.keys()) {
+    if (/transformers|huggingface|onnx/i.test(name)) await caches.delete(name);
+  }
+  return freed;
 }
