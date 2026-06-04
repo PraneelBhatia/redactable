@@ -263,12 +263,15 @@
         <div class="bd">
           <div style="flex:1 1 340px">
             <p>Everything above is caught instantly by <b>math — no model, no upload</b>. Names and
-              places have no checksum, so masking those needs a model. The recommended engine,
-              <b>GLiNER</b>, ships with the command-line tool; in the browser the <b>last-resort</b>
-              option is to run <b>Gemma-4</b> on your GPU — still fully local, but a large one-time download.</p>
-            <p class="note">Needs WebGPU. Downloads <code>gemma-4-E2B-it-ONNX</code> (~GB, cached after first run).</p>
+              places have no checksum, so they need a model — run one <b>on-device</b>, here:</p>
+            <p class="note"><b>GLiNER</b>: a small encoder NER on <b>CPU</b> (no GPU) — the
+              recommended engine, and the default in the CLI; the in-browser build is
+              <b>experimental</b>. &nbsp;·&nbsp; <b>Gemma-4</b>: higher recall, needs <b>WebGPU</b>
+              + a ~GB download.</p>
           </div>
-          <button id="deepscan-auto" disabled>▾ Run Gemma-4 locally</button>
+          <button id="run-gliner" disabled>▾ GLiNER (experimental · CPU)</button>
+          <button id="run-gemma" disabled>▾ Gemma-4 (GPU)</button>
+          <button id="dl-resume" style="display:none">▾ Resume</button>
           <button id="dl-pause" style="display:none">⏸ Pause</button>
           <button id="dl-cancel" style="display:none">✕ Cancel</button>
           <button id="dl-delete" style="display:none">🗑 Delete model</button>
@@ -294,6 +297,7 @@
     <script type="module">
       import { scrub } from "./redactable.js";
       import { GemmaScanner, webgpuAvailable, cachedModelBytes, deleteCachedModels } from "./gemma.js";
+      import { GlinerScanner } from "./gliner.js";
 
       const $ = (id) => document.getElementById(id);
       const input = $("input"), output = $("output"), doc = $("doc"), stats = $("stats");
@@ -304,14 +308,15 @@
       const online = navigator.onLine;
       $("d-net").className = "dot " + (online ? "warn" : "ok");
       $("net-label").textContent = "network: " + (online ? "available (unused)" : "offline ✓");
+      $("run-gliner").disabled = false; // GLiNER runs on CPU/WASM — no GPU required
       if (webgpuAvailable()) {
         $("d-gpu").className = "dot ok";
         $("gpu-label").textContent = "webgpu: available";
-        $("deepscan-auto").disabled = false;
+        $("run-gemma").disabled = false;
         $("deepscan-file").disabled = false;
       } else {
         $("d-gpu").className = "dot no";
-        $("gpu-label").textContent = "webgpu: unavailable (deep scan off)";
+        $("gpu-label").textContent = "webgpu: unavailable (Gemma off — GLiNER still works)";
       }
       refreshCacheStatus(); // surface a Delete button if a model is already cached
 
@@ -374,14 +379,16 @@
         setTimeout(() => ($("copy").textContent = "Copy ⧉"), 1400);
       };
 
-      // ---- gemma deep scan + download controls ----
+      // ---- on-device deep scan (GLiNER default, Gemma last resort) + download controls ----
       const mb = (b) => (b / 1048576).toFixed(0);
       const setStatus = (m) => ($("gemma-status").textContent = m);
+      let lastEngine = "gliner";
 
       function setDlState(state) {
         const show = (id, on) => ($(id).style.display = on ? "" : "none");
-        show("deepscan-auto", state === "idle" || state === "paused");
-        $("deepscan-auto").textContent = state === "paused" ? "▾ Resume download" : "▾ Run Gemma-4 locally";
+        show("run-gliner", state === "idle");
+        show("run-gemma", state === "idle");
+        show("dl-resume", state === "paused");
         show("dl-pause", state === "downloading");
         show("dl-cancel", state === "downloading" || state === "paused");
         show("dl-progress", state === "downloading" || state === "paused");
@@ -392,42 +399,56 @@
         try { bytes = await cachedModelBytes(); } catch {}
         if (bytes > 0) {
           $("dl-delete").style.display = "";
-          $("dl-delete").textContent = `🗑 Delete model (~${mb(bytes)} MB)`;
+          $("dl-delete").textContent = `🗑 Delete cached model (~${mb(bytes)} MB)`;
         } else {
           $("dl-delete").style.display = "none";
         }
       }
 
-      async function deepScan(backend, source) {
-        if (!scanner || scanner.backend !== backend) scanner = new GemmaScanner({ backend });
+      function makeScanner(engine) {
+        if (engine === "gliner") return new GlinerScanner();
+        if (engine === "gemma-file") return new GemmaScanner({ backend: "mediapipe" });
+        return new GemmaScanner({ backend: "transformers" }); // gemma
+      }
+
+      async function deepScan(engine, source) {
+        lastEngine = engine;
+        if (!scanner || scanner._engine !== engine) { scanner = makeScanner(engine); scanner._engine = engine; }
         scanner.onStatus = setStatus;
         scanner.onProgress = (p) => ($("dl-bar").style.width = p + "%");
         setDlState("downloading");
-        $("deepscan-file").disabled = true;
+        const label = engine === "gliner" ? "GLiNER" : "Gemma";
         try {
           if (!scanner.ready) await scanner.load(source);
           setStatus("scanning for names…");
           extraSpans = await scanner.findEntities(input.value);
           render();
-          setStatus(`Gemma added ${extraSpans.length} contextual span(s) — locally.`);
+          setStatus(`${label} added ${extraSpans.length} contextual span(s) — locally.`);
           setDlState("idle");
         } catch (e) {
           if (e && e.reason === "paused") { setDlState("paused"); setStatus("paused — Resume to continue."); }
           else if (e && e.reason === "cancelled") { setDlState("idle"); setStatus("download cancelled."); }
-          else { setDlState("idle"); setStatus("error: " + e.message); }
+          else {
+            setDlState("idle");
+            const msg = e && e.message ? e.message : String(e);
+            setStatus(/span_idx|feeds|onnx/i.test(msg)
+              ? "in-browser GLiNER export is still being sorted — use Gemma-4 here, or GLiNER in the CLI."
+              : "error: " + msg);
+          }
         } finally {
-          $("deepscan-file").disabled = false;
           refreshCacheStatus();
         }
       }
 
-      $("deepscan-auto").onclick = () => deepScan("transformers", null);
+      $("run-gliner").onclick = () => deepScan("gliner", null);
+      $("run-gemma").onclick = () => deepScan("gemma", null);
+      $("dl-resume").onclick = () => deepScan(lastEngine, null);
       $("dl-pause").onclick = () => scanner && scanner.pause();
       $("dl-cancel").onclick = () => scanner && scanner.cancel();
       $("dl-delete").onclick = async () => {
         $("dl-delete").disabled = true;
         const freed = await deleteCachedModels();
-        if (scanner) { scanner.model = null; scanner.tokenizer = null; scanner.llm = null; }
+        scanner = null;
         $("dl-bar").style.width = "0%";
         setStatus(`deleted cached model — freed ~${mb(freed)} MB.`);
         $("dl-delete").disabled = false;
@@ -436,7 +457,7 @@
       $("deepscan-file").onclick = () => {
         const f = $("model-file").files[0];
         if (!f) { setStatus("pick a Gemma .task file first"); return; }
-        deepScan("mediapipe", f);
+        deepScan("gemma-file", f);
       };
 
       render();
