@@ -107,9 +107,17 @@ pip install "redactable[mcp]"
 claude mcp add redactable -- redactable-mcp
 ```
 
-Exposes `scrub` / `restore` / `detect` tools (reversible tokens, so the round-trip stays
-coherent). Also ships a Claude Code **pre-send hook** (`hooks/redactable-userpromptsubmit.py`)
-that warns or blocks on PII, and a git **pre-commit** hook. Full guide: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
+```bash
+# Or fully automatic for ANY agent — a local scrub-proxy on the wire (one env var):
+redactable serve
+export ANTHROPIC_BASE_URL=http://localhost:8080      # Claude Code; or --openai-api-base for others
+```
+
+The MCP server exposes `scrub` / `restore` / `detect` tools; the proxy tokenizes PII out of every
+request (with a meta-prompt that keeps placeholders verbatim) and restores it in the reply — so
+the model provider never sees real PII while the agent stays coherent. Also ships a Claude Code
+**pre-send hook** (`hooks/redactable-userpromptsubmit.py`) and a git **pre-commit** hook. Full
+guide: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
 
 ## What's in the box (v0.1)
 

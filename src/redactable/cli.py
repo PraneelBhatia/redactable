@@ -86,6 +86,15 @@ def _build_parser() -> argparse.ArgumentParser:
     pe.add_argument(
         "--llm-url", default="http://localhost:11434/v1", help="OpenAI-compatible base URL"
     )
+
+    ps = sub.add_parser(
+        "serve", help="run a local scrub-proxy between your agent and the LLM API"
+    )
+    ps.add_argument("--host", default="127.0.0.1")
+    ps.add_argument("--port", type=int, default=8080)
+    ps.add_argument("--policy", default="pii-structured", help="policy whose PII types to scrub")
+    ps.add_argument("--anthropic-url", default=None, help="override upstream Anthropic base URL")
+    ps.add_argument("--openai-url", default=None, help="override upstream OpenAI base URL")
     return parser
 
 
@@ -198,6 +207,11 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_redact(args)
         if args.command == "eval":
             return _cmd_eval(args)
+        if args.command == "serve":
+            from redactable.proxy import serve
+
+            serve(args.host, args.port, args.policy, args.anthropic_url, args.openai_url)
+            return EXIT_OK
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR

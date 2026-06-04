@@ -45,12 +45,26 @@ Default: non-blocking warning in context. `REDACTABLE_BLOCK=1` blocks submission
 A hook can *detect + warn/block* pre-send, but it can't silently rewrite the payload — for that,
 use #1 (model calls `scrub`) or #3.
 
-## 3. Local scrub proxy (fully automatic, any agent) — roadmap
+## 3. Local scrub proxy (fully automatic, any agent)
 
-The only point every agent shares is its HTTP call to the model. A local OpenAI/Anthropic-
-compatible proxy that tokenizes message bodies, forwards to the real API, and reverses the reply
-makes redaction automatic and transparent — point the agent at it with one env var
-(`ANTHROPIC_BASE_URL` / `--openai-api-base`). Planned as `redactable serve`.
+The one point every agent shares is its HTTP call to the model — so intercept it:
+
+```bash
+redactable serve                                   # localhost:8080, Anthropic + OpenAI compatible
+export ANTHROPIC_BASE_URL=http://localhost:8080    # Claude Code
+# or:  aider --openai-api-base http://localhost:8080/v1
+```
+
+For every request the proxy tokenizes PII (`jane@acme.io` → `[EMAIL_1]`), injects a meta-prompt
+instructing the model to keep the placeholders **verbatim**, forwards to the real API with your
+key passed straight through, and restores the originals in the reply — both JSON and streamed
+(SSE, with a rolling buffer so a placeholder split across chunks is still restored). The model
+provider never sees real PII; the agent gets coherent output. Pure stdlib, nothing logged.
+Flags: `--policy --host --port --anthropic-url --openai-url`.
+
+> Verified end-to-end: upstream receives only tokens + the meta-prompt; the agent receives the
+> restored originals. Structured-PII values are JSON-safe; restoring contextual values that
+> contain quotes is a known edge for a later version.
 
 ## Own the agent code? Wrap the call directly
 
