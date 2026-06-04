@@ -79,18 +79,19 @@ Use the reusable GitHub Action to gate PRs:
 
 Structured PII is caught by math everywhere. **Contextual** PII (names, places, orgs) has no
 checksum, so it needs a model — and the engine swaps in whichever model fits the runtime,
-behind one `Detector` interface:
+behind one `Detector` interface. **GLiNER (a small CPU encoder) is the default contextual
+engine; Gemma is the last-resort fallback** for when you have a GPU and want max recall.
 
 ```bash
-# Recommended for CLI/CI/server: GLiNER — an encoder NER (auditable, CPU, can't hallucinate)
+# Default: GLiNER — an encoder NER (auditable, CPU, fast, can't hallucinate)
 pip install "redactable[ner]"
 redactable redact notes.txt --policy hipaa-safe-harbor --ner
 
-# If you'd rather run Gemma locally (parity with the browser): point at any OpenAI-compatible
-# server, e.g. Ollama — `ollama run gemma3` — text never leaves your machine
+# Last resort (max recall, needs a GPU/server): Gemma via any OpenAI-compatible endpoint,
+# e.g. Ollama — `ollama run gemma3` — text never leaves your machine
 redactable redact notes.txt --policy hipaa-safe-harbor --llm --llm-model gemma3
 
-# In the browser: Gemma-4 on WebGPU (see web/) — auto-downloads, runs in the tab
+# In the browser: Gemma-4 on WebGPU (see web/) — the GPU "last resort" tier, runs in the tab
 ```
 
 Same policies, same eval harness, same audit trail — only the contextual `Detector` changes.
