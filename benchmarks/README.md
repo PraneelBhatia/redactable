@@ -80,6 +80,28 @@ entities of types not mapped here (usernames, job titles), i.e. real PII under a
 This was run live via the browser path (verified end-to-end), not a mock. A larger, automated
 sweep is future work.
 
+### GLiNER vs Gemma-4, head-to-head (same 25 examples)
+
+`benchmarks/ai4privacy/benchmark_contextual.py` runs the **CLI's GLiNER tier** with the same
+sample, mapping, and scoring, for a direct comparison:
+
+```bash
+# first run downloads weights; afterwards set offline to avoid HF rate-limit stalls
+HF_HUB_OFFLINE=1 python benchmarks/ai4privacy/benchmark_contextual.py --engine gliner --sample web/bench_sample.json
+```
+
+| tier | PERSON recall | LOCATION recall | ORG | speed | hardware |
+|---|---|---|---|---|---|
+| Gemma-4 (browser, WebGPU) | **1.000** | 1.000 | 0/1 | ~5–10 s/ex | GPU |
+| GLiNER (CPU, default thr 0.5) | 0.792 | 1.000 | 0/1 | **0.39 s/ex** | CPU |
+
+Takeaway: Gemma-4 has slightly higher name recall; **GLiNER is ~15–25× faster on CPU with no
+GPU, deterministic output, and no JSON-parse fragility** — and its recall is tunable via the
+detection threshold. Neither is "perfect"; both are *soft, optional* tiers over the
+deterministic core. (Heads-up for reproducers: GLiNER fetches the `microsoft/mdeberta-v3-base`
+backbone tokenizer at load — unauthenticated HF requests can rate-limit/stall with no timeout,
+so set an `HF_TOKEN` and/or `HF_HUB_OFFLINE=1` after the first download.)
+
 ### Bugs this benchmark found and fixed
 
 1. **IPv4 at end of a sentence** (`...213.`) was dropped — the trailing boundary rejected a
