@@ -45,9 +45,14 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
 ]
+# MCP server: drop-in PII scrubbing for any MCP-aware coding agent.
+mcp = [
+    "mcp>=1.2",
+]
 
 [project.scripts]
 redactable = "redactable.cli:run"
+redactable-mcp = "redactable.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/redactable/redactable"

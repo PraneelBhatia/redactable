@@ -97,6 +97,20 @@ redactable redact notes.txt --policy hipaa-safe-harbor --llm --llm-model gemma3
 Same policies, same eval harness, same audit trail — only the contextual `Detector` changes.
 A missing/unreachable model degrades gracefully: the deterministic core still runs.
 
+## Drop it into your coding agent
+
+Scrub PII before it reaches the model — via the familiar mechanisms:
+
+```bash
+# MCP server — one-line add for any MCP-aware agent (Claude Code, Cursor, …)
+pip install "redactable[mcp]"
+claude mcp add redactable -- redactable-mcp
+```
+
+Exposes `scrub` / `restore` / `detect` tools (reversible tokens, so the round-trip stays
+coherent). Also ships a Claude Code **pre-send hook** (`hooks/redactable-userpromptsubmit.py`)
+that warns or blocks on PII, and a git **pre-commit** hook. Full guide: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
+
 ## What's in the box (v0.1)
 
 - **Deterministic detectors** — email, phone, US SSN, credit card (Luhn), IBAN (MOD-97),
