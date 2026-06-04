@@ -3,7 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>REDACTABLE — scrub before you talk to an LLM</title>
+    <title>Redactable — scrub PII before you talk to an LLM</title>
+    <meta name="description" content="Strip names, SSNs, cards, emails, IBANs and IPs out of your text before you paste it into ChatGPT, Claude, or Gemini. Runs 100% in your browser — nothing is uploaded. Open source, Apache-2.0." />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:title" content="Redactable — scrub PII before you talk to an LLM" />
+    <meta property="og:description" content="Local, open-source PII filter. Your text never leaves the browser." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -21,7 +27,7 @@
         --red: #d2332b;
         --amber: #e0a32e;
         --green: #3fae6b;
-        --muted: #8a8782;
+        --muted: #9a978e;
         --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
         --type: "Special Elite", var(--mono);
       }
@@ -178,21 +184,36 @@
       }
       .chip b { color: var(--red); }
 
-      /* ---- gemma panel ---- */
-      .gemma { border: 1px solid var(--line); border-left: 3px solid var(--amber); background: var(--panel); margin-top: 18px; }
-      .gemma .bd { padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-      .gemma p { margin: 0 0 4px; color: #c8c4ba; font-size: 12.5px; }
-      .gemma .note { color: var(--muted); font-size: 11px; }
+      /* ---- optional advanced (model) section ---- */
+      details.adv { border: 1px solid var(--line); border-left: 3px solid var(--line); background: var(--panel); margin-top: 18px; }
+      details.adv[open] { border-left-color: var(--amber); }
+      details.adv > summary { list-style: none; cursor: pointer; padding: 12px 16px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+      details.adv > summary::-webkit-details-marker { display: none; }
+      details.adv > summary::before { content: "▸"; color: var(--amber); }
+      details.adv[open] > summary::before { content: "▾"; }
+      details.adv .bd { padding: 0 16px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+      details.adv p { margin: 0 0 6px; color: #c8c4ba; font-size: 12.5px; max-width: 64ch; }
+      details.adv .note { color: var(--muted); font-size: 11px; }
       input[type="file"] { font-family: var(--mono); font-size: 11px; color: var(--muted); max-width: 260px; }
       #gemma-status { font-size: 11px; color: var(--amber); letter-spacing: 0.04em; }
+      .hint { color: var(--muted); font-size: 12px; margin: 12px 2px 0; letter-spacing: 0.02em; }
       footer { margin-top: 30px; color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
       a { color: var(--amber); }
+      a:hover { text-decoration: underline; }
+      .toplink { color: var(--muted); text-decoration: none; }
+      :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+      @media (max-width: 560px) {
+        .wrap { padding: 18px 14px 60px; }
+        .stamp { display: none; }
+        h1 { font-size: 34px; }
+        .status, header { padding-left: 16px; padding-right: 16px; }
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <header>
-        <div class="kicker">Local PII Filter · Open Source · Apache-2.0</div>
+        <div class="kicker">Local PII Filter · Apache-2.0 · <a class="toplink" href="https://github.com/PraneelBhatia/redactable" target="_blank" rel="noopener">GitHub ↗</a></div>
         <h1>RE<span class="bar">DACT</span>ABLE</h1>
         <div class="tagline">
           Scrub names, SSNs, cards, emails, IBANs and IPs out of your text
@@ -212,20 +233,23 @@
       <div class="grid">
         <div class="card">
           <div class="hd"><span>① Paste your text</span><span id="in-count">0 chars</span></div>
-          <textarea id="input" spellcheck="false" placeholder="e.g. Hi, I'm Dana Lee — my SSN is 123-45-6789, card 4111 1111 1111 1111, reach me at dana@example.com or +44 7911 123456."></textarea>
+          <textarea id="input" aria-label="Text to scrub" spellcheck="false" placeholder="Paste anything you're about to send to an LLM — or hit “Try an example”."></textarea>
         </div>
         <div class="card">
-          <div class="hd"><span>② Safe to send</span><button id="copy">Copy</button></div>
-          <textarea id="output" readonly spellcheck="false" placeholder="Redacted text appears here…"></textarea>
+          <div class="hd"><span>② Safe to send</span><button class="primary" id="copy">Copy ⧉</button></div>
+          <textarea id="output" aria-label="Redacted output" readonly spellcheck="false" placeholder="← paste on the left; the safe-to-send version appears here, instantly."></textarea>
         </div>
       </div>
 
       <div class="controls">
         <button class="primary" id="scrub">▸ Scrub now</button>
+        <button id="example">Try an example</button>
         <label class="opt"><input type="checkbox" id="numbered" checked /> numbered tokens ([EMAIL_1])</label>
         <span style="flex: 1"></span>
         <button id="clear">Clear</button>
       </div>
+
+      <p class="hint">🔒 100% in your browser — your text never leaves this tab. No account, no upload, no server.</p>
 
       <div class="stats" id="stats"></div>
 
@@ -234,26 +258,32 @@
         <div class="doc" id="doc"><span class="empty">Your text, with detected identifiers struck out, appears here.</span></div>
       </div>
 
-      <div class="gemma">
-        <div class="hd" style="border:none;padding:12px 16px 0">④ Optional: Gemma deep scan (local, for names)</div>
+      <details class="adv">
+        <summary>④ Optional · also mask names &amp; places (advanced)</summary>
         <div class="bd">
-          <div style="flex:1 1 320px">
-            <p>Structured IDs are caught by math. <b>Names &amp; places</b> need a model — run an open
-              <b>Gemma&nbsp;4</b> on your GPU, fully local. Nothing is uploaded.</p>
-            <p class="note">Auto path downloads <code>onnx-community/gemma-4-E2B-it-ONNX</code> via
-              Transformers.js (~GB, cached after first run). Or load a MediaPipe <code>.task</code> file.</p>
+          <div style="flex:1 1 340px">
+            <p>Everything above is caught instantly by <b>math — no model, no upload</b>. Names and
+              places have no checksum, so masking those needs a model. The recommended engine,
+              <b>GLiNER</b>, ships with the command-line tool; in the browser the <b>last-resort</b>
+              option is to run <b>Gemma-4</b> on your GPU — still fully local, but a large one-time download.</p>
+            <p class="note">Needs WebGPU. Downloads <code>gemma-4-E2B-it-ONNX</code> (~GB, cached after first run).</p>
           </div>
-          <button id="deepscan-auto" disabled>▾ Load Gemma-4 (WebGPU)</button>
-          <span style="color:var(--muted);font-size:11px">or</span>
-          <input type="file" id="model-file" accept=".task,.litertlm,.bin" />
-          <button id="deepscan-file" disabled>Load file &amp; scan</button>
+          <button id="deepscan-auto" disabled>▾ Run Gemma-4 locally</button>
           <span id="gemma-status">idle</span>
+          <details style="flex-basis:100%; margin-top:4px">
+            <summary class="note" style="cursor:pointer">advanced: load a MediaPipe .task file instead</summary>
+            <div style="display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap">
+              <input type="file" id="model-file" accept=".task,.litertlm,.bin" />
+              <button id="deepscan-file" disabled>Load file &amp; scan</button>
+            </div>
+          </details>
         </div>
-      </div>
+      </details>
 
       <footer>
-        Redactable · deterministic-first PII de-identification you can prove ·
-        the same engine ships as a Python library, CLI &amp; CI gate.
+        Redactable — deterministic-first PII de-identification you can prove. Same engine ships as a
+        Python library, CLI &amp; CI gate. ·
+        <a href="https://github.com/PraneelBhatia/redactable" target="_blank" rel="noopener">github.com/PraneelBhatia/redactable ↗</a>
       </footer>
     </div>
 
@@ -323,14 +353,20 @@
         });
       }
 
+      const SAMPLE = "Hi, I'm Dana Lee at Mercy General Hospital in Boston. My SSN is 123-45-6789, "
+        + "card 4111 1111 1111 1111, email dana.lee@example.com, cell +44 7911 123456, "
+        + "and the server is 2001:db8::1. Can you help me draft a reply?";
+
       $("scrub").onclick = render;
       $("numbered").onchange = render;
       input.addEventListener("input", () => { extraSpans = []; render(); });
-      $("clear").onclick = () => { input.value = ""; extraSpans = []; render(); };
+      $("clear").onclick = () => { input.value = ""; extraSpans = []; render(); input.focus(); };
+      $("example").onclick = () => { input.value = SAMPLE; extraSpans = []; render(); };
       $("copy").onclick = async () => {
+        if (!output.value) return;
         try { await navigator.clipboard.writeText(output.value); $("copy").textContent = "Copied ✓"; }
         catch { output.select(); document.execCommand("copy"); $("copy").textContent = "Copied ✓"; }
-        setTimeout(() => ($("copy").textContent = "Copy"), 1400);
+        setTimeout(() => ($("copy").textContent = "Copy ⧉"), 1400);
       };
 
       // ---- gemma deep scan ----
