@@ -66,6 +66,13 @@ Flags: `--policy --host --port --anthropic-url --openai-url`.
 > restored originals. Structured-PII values are JSON-safe; restoring contextual values that
 > contain quotes is a known edge for a later version.
 
+**This is the "any harness" path.** Every harness ends in the same HTTPS call to a model, so the
+proxy covers all of them with one setup — see the copy-paste, per-harness runbook (with a
+self-verification test) in [`AGENT-SETUP.md`](AGENT-SETUP.md). Exception: harnesses that auth via
+a **subscription OAuth** account (e.g. opencode's ChatGPT login) hit a different backend the proxy
+can't reach — use an in-harness adapter instead, like the opencode plugin in
+[`integrations/opencode/`](../integrations/opencode/).
+
 ## Own the agent code? Wrap the call directly
 
 ```python

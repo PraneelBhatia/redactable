@@ -119,6 +119,11 @@ the model provider never sees real PII while the agent stays coherent. Also ship
 **pre-send hook** (`hooks/redactable-userpromptsubmit.py`) and a git **pre-commit** hook. Full
 guide: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
 
+> **Running inside a coding agent?** The scrub-proxy works with *any* harness, because every
+> harness ends in the same HTTPS call to the model. An agent can set this up itself in two
+> steps (`redactable serve`, then point its base URL at it) — copy-paste runbook with a
+> self-verification test: [`docs/AGENT-SETUP.md`](docs/AGENT-SETUP.md).
+
 ## What's in the box (v0.1)
 
 - **Deterministic detectors** — email, phone, US SSN, credit card (Luhn), IBAN (MOD-97),
