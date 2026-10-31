@@ -101,7 +101,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _format_report(report: EvalReport) -> str:
     header = f"{'entity':<14}{'precision':>11}{'recall':>9}{'f1':>8}{'support':>9}"
     rule = "-" * len(header)
-    lines = [header, rule]
+    lines = ["Matching: full_span (type-aware containment, 1:1)", header, rule]
     for etype, s in sorted(report.per_entity.items()):
         lines.append(f"{etype:<14}{s.precision:>11.3f}{s.recall:>9.3f}{s.f1:>8.3f}{s.support:>9}")
     lines.append(rule)
@@ -111,11 +111,23 @@ def _format_report(report: EvalReport) -> str:
         f"{'macro':<14}{report.macro.precision:>11.3f}{report.macro.recall:>9.3f}"
         f"{report.macro.f1:>8.3f}"
     )
+    lines.append("Unmeasured types: " + (", ".join(report.unmeasured_types) or "none"))
+    lines.append("Ungated types: " + (", ".join(report.ungated_types) or "none"))
+    lines.append("Exact and relaxed-overlap diagnostics are available with --json.")
     return "\n".join(lines)
 
 
 def _report_to_dict(report: EvalReport) -> dict:
     return {
+        "matching": report.matching,
+        "unmeasured_types": report.unmeasured_types,
+        "ungated_types": report.ungated_types,
+        "diagnostics": {
+            mode: {t: {"precision": s.precision, "recall": s.recall,
+                       "f1": s.f1, "support": s.support}
+                   for t, s in scores.items()}
+            for mode, scores in report.diagnostics.items()
+        },
         "per_entity": {
             t: {
                 "precision": round(s.precision, 4),
@@ -135,7 +147,9 @@ def _report_to_dict(report: EvalReport) -> dict:
         },
         "gate_passed": report.gate_passed,
         "gate_failures": [
-            {"entity_type": f.entity_type, "recall": round(f.recall, 4), "threshold": f.threshold}
+            {"entity_type": f.entity_type,
+             "recall": round(f.recall, 4) if f.recall is not None else None,
+             "threshold": f.threshold, "reason": f.reason}
             for f in report.gate_failures
         ],
     }
@@ -177,6 +191,10 @@ def _cmd_redact(args: argparse.Namespace) -> int:
 
 def _cmd_eval(args: argparse.Namespace) -> int:
     policy = Policy.load(args.policy)
+    if args.gate and not policy.thresholds:
+        raise ValueError("--gate requires a policy with recall thresholds")
+    if set(policy.thresholds) - set(policy.entities):
+        raise ValueError("policy thresholds must refer to in-scope entity types")
     examples = load_corpus(args.corpus)
     scope = set(policy.entities) or None
     detectors = _build_detectors(args.ner, args.llm, args.llm_model, args.llm_url)
@@ -190,6 +208,10 @@ def _cmd_eval(args: argparse.Namespace) -> int:
 
     if args.gate and report.gate_passed is False:
         for failure in report.gate_failures:
+            if failure.reason == "missing_support":
+                print(f"GATE FAILED: {failure.entity_type} missing_support (no gold examples)",
+                      file=sys.stderr)
+                continue
             print(
                 f"GATE FAILED: {failure.entity_type} recall {failure.recall:.3f} "
                 f"< threshold {failure.threshold:.3f}",

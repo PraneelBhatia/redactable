@@ -1,7 +1,6 @@
-# Structured identifiers only — every type here is caught deterministically by regex +
-# checksum, so this pack is fully satisfiable by the core engine with no model and no
-# heavy dependency. Ideal as a CI gate ("no raw structured PII leaves this pipeline")
-# and as the always-passing baseline the deterministic engine is benchmarked against.
+# Structured identifier types implemented by the deterministic detector. A passing gate
+# measures the labeled corpus and configured thresholds, not absence of all PII in arbitrary
+# traffic. Format variations can still be missed; no contextual detector is loaded here.
 name: pii-structured
 version: 1
 jurisdiction: ""

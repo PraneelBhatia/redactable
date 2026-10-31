@@ -3,6 +3,13 @@
 "Provable recall" only means something if it's measured against data we didn't write. This
 directory validates the engine against an independent, third-party labeled PII dataset.
 
+**Historical results:** the tables below used relaxed overlap (and the contextual tables
+use their separately described granularity-tolerant metric). They are not full-span removal
+results. The current Python scorer defaults to type-aware full-span containment; rerunning
+`benchmark.py` will produce different metrics where boundaries are incomplete. No external
+dataset or model benchmark was rerun for this change. Overlap precision-coverage only measures
+whether a prediction touches a labeled span, not how much sensitive text remains.
+
 ## ai4privacy/pii-masking-200k (English)
 
 [`ai4privacy/pii-masking-200k`](https://huggingface.co/datasets/ai4privacy/pii-masking-200k)
@@ -43,7 +50,7 @@ span. It redacts real PII, not noise.
 - **EMAIL / URL / IBAN / IP_ADDRESS** — at or near perfect. The structured core does its job.
 - **CREDIT_CARD 0.18** is *by design, not a defect*: only **18% of this dataset's "card
   numbers" are Luhn-valid** (all 94 are random 16-digit strings). The checksum gate correctly
-  rejects invalid numbers — against *real* cards (always Luhn-valid) recall is ≈100%. A
+  rejects invalid numbers. This does not establish recall on all real-world card formats. A
   permissive "card-like" mode (flag 13–19 digit runs without Luhn, trading precision for
   recall) is a roadmap option for users who prefer recall here.
 - **US_SSN 0.56** — the dataset's `SSN` label is a *mix*: genuine space-separated US SSNs
@@ -71,8 +78,8 @@ the first- and last-name gold spans):
 | LOCATION | **1.000** (10/10) | 0.83 | 10 |
 | ORG | 0.000 (0/1) | — | 1 |
 
-So **deterministic (structured) + Gemma-4 (contextual)** together cover the dataset: the part
-deterministic can't touch, Gemma catches at ~100% recall on this sample.
+These are historical overlap results on a small sample, including an ORG miss. They do not
+establish complete removal across the dataset or on unseen data.
 
 Caveats (kept honest): small sample (25 examples); **ORG has a single gold span** so its number
 is not meaningful; `*`precision is a *lower bound* — some Gemma "false positives" are real

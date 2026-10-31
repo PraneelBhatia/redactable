@@ -29,8 +29,8 @@ Most PII tools are a pile of regexes or a thin wrapper around an LLM, and neithe
    is handled by an **encoder NER** (GLiNER) — non-autoregressive, so it can't hallucinate or
    regurgitate — and *every* engine (ours, Presidio, a cloud API) is scored on the same labeled
    corpus. If recall drops, your build fails.
-3. **Provable, not promised.** Versioned **jurisdiction policy packs** (HIPAA Safe Harbor's 18
-   identifiers, GDPR special categories), **reversible tokenization** so de-identified data
+3. **Versioned and auditable.** Declarative **policy packs** select the entity types currently
+   mapped in the library. **Reversible tokenization** lets transformed data
    stays joinable, and a reproducible **audit manifest** of exactly what was redacted, by which
    policy version, by which engine version, when.
 
@@ -46,9 +46,16 @@ redactable redact notes.txt --policy hipaa-safe-harbor --out notes.redacted.txt 
 pip install "redactable[ner]"
 redactable redact notes.txt --policy hipaa-safe-harbor --ner --out notes.redacted.txt
 
-# Prove recall against a labeled corpus — exits non-zero on regression (drop this in CI)
+# Measure full-span recall against a labeled corpus; fail on misses or missing support
 redactable eval --corpus corpus/seed.jsonl --policy pii-structured --gate
 ```
+
+The gate uses **type-aware full-span containment**, with one prediction per gold entity.
+A prediction must cover every character of a gold span to receive credit; exact-boundary
+and relaxed-overlap scores are separate diagnostics in `--json`. Every thresholded type
+needs at least one gold example. Missing support fails the gate, including an empty corpus.
+Reports list unmeasured and ungated types. A passing gate measures only the supplied labels,
+examples and thresholds; it does not establish that arbitrary text is free of PII.
 
 ```python
 from redactable import Redactor
@@ -77,7 +84,7 @@ Use the reusable GitHub Action to gate PRs:
 
 ## Names & places, in any runtime
 
-Structured PII is caught by math everywhere. **Contextual** PII (names, places, orgs) has no
+Structured identifiers use regex patterns and checksum validation. **Contextual** PII (names, places, orgs) has no
 checksum, so it needs a model — and the engine swaps in whichever model fits the runtime,
 behind one `Detector` interface. **GLiNER (a small CPU encoder) is the default contextual
 engine; Gemma is the last-resort fallback** for when you have a GPU and want max recall.
@@ -95,7 +102,8 @@ redactable redact notes.txt --policy hipaa-safe-harbor --llm --llm-model gemma3
 ```
 
 Same policies, same eval harness, same audit trail — only the contextual `Detector` changes.
-A missing/unreachable model degrades gracefully: the deterministic core still runs.
+A missing or failing configured detector aborts redaction; partially protected output is
+not returned. Install and verify optional models explicitly before using them.
 
 ## Drop it into your coding agent
 
@@ -108,21 +116,23 @@ claude mcp add redactable -- redactable-mcp
 ```
 
 ```bash
-# Or fully automatic for ANY agent — a local scrub-proxy on the wire (one env var):
+# For clients using supported, non-streaming text requests through a local proxy:
 redactable serve
 export ANTHROPIC_BASE_URL=http://localhost:8080      # Claude Code; or --openai-api-base for others
 ```
 
-The MCP server exposes `scrub` / `restore` / `detect` tools; the proxy tokenizes PII out of every
-request (with a meta-prompt that keeps placeholders verbatim) and restores it in the reply — so
-the model provider never sees real PII while the agent stays coherent. Also ships a Claude Code
+The MCP server exposes `scrub` / `restore` / `detect` tools. The proxy tokenizes detected
+structured identifiers in supported message text and restores them in JSON replies.
+It accepts text-only OpenAI Chat Completions and Anthropic Messages; streaming, tools,
+attachments, metadata and unknown endpoints or fields are rejected before forwarding.
+Changing the proxy policy cannot enable contextual detection. Also ships a Claude Code
 **pre-send hook** (`hooks/redactable-userpromptsubmit.py`) and a git **pre-commit** hook. Full
 guide: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
 
-> **Running inside a coding agent?** The scrub-proxy works with *any* harness, because every
-> harness ends in the same HTTPS call to the model. An agent can set this up itself in two
-> steps (`redactable serve`, then point its base URL at it) — copy-paste runbook with a
-> self-verification test: [`docs/AGENT-SETUP.md`](docs/AGENT-SETUP.md).
+> **Running inside a coding agent?** Verify the actual client route and request schema.
+> OAuth or hosted clients may bypass localhost entirely, and agents that require tools or
+> streaming are currently unsupported by this proxy. Setup and a synthetic verification
+> test: [`docs/AGENT-SETUP.md`](docs/AGENT-SETUP.md).
 
 ## What's in the box (v0.1)
 
@@ -132,28 +142,29 @@ guide: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
   via GLiNER. The deterministic core has **zero heavy dependencies**; the `[ner]` extra pulls
   PyTorch + transformers transitively (a large, CPU-capable download), so it stays opt-in.
 - **Eval harness** — per-entity precision / recall / F1 over a labeled corpus, with a
-  configurable **regression gate** for CI.
+  configurable **full-span regression gate** for CI and explicit coverage reporting.
 - **Reversible tokenization** — consistent `[TYPE_n]` placeholders, joinable across a document,
   re-identifiable under a local keymap.
-- **Policy packs** — declarative, versioned YAML. Ships `hipaa-safe-harbor` (the 18
-  identifiers) and `pii-structured` (deterministic types only, passes with no model).
+- **Policy packs** — declarative, versioned YAML. Ships `hipaa-safe-harbor` (a partial mapping
+  of identifier categories, not complete Safe Harbor implementation) and `pii-structured`
+  (deterministic types only). A policy declaration does not add detector coverage.
 - **CLI + Python library + reusable GitHub Action.**
 
 ## Validated on real data
 
-Measured against the independent, third-party [`ai4privacy/pii-masking-200k`](https://huggingface.co/datasets/ai4privacy/pii-masking-200k)
-dataset (1,500 English examples) — not our own fixtures. Deterministic engine, recall is the
-headline de-id metric:
+Historical results against the third-party synthetic
+[`ai4privacy/pii-masking-200k`](https://huggingface.co/datasets/ai4privacy/pii-masking-200k)
+dataset (1,500 English examples) used relaxed-overlap matching. These numbers have **not**
+been rerun with the current full-span scorer and do not measure complete removal:
 
 | EMAIL | URL | IBAN | IP_ADDRESS | PHONE | US_SSN | CREDIT_CARD |
 |---|---|---|---|---|---|---|
 | 1.000 | 1.000 | 1.000 | 0.996 | 0.609 | 0.560 | 0.181* |
 
-**100% precision-coverage** (every span flagged is real PII). `*`CREDIT_CARD is bounded by the
-dataset: only 18% of its synthetic "cards" are Luhn-valid, and the checksum gate correctly
-rejects the rest — against real cards it's ~perfect. PHONE (US-centric regex) and the
-contextual types (names/places, handled by the NER/Gemma tier) are the honest gaps. Full
-methodology, interpretation, and the two bugs this benchmark caught: [`benchmarks/`](benchmarks/).
+The historical overlap precision-coverage was 100%; overlap alone does not prove full
+redaction or correct classification. `*`Only 18% of the dataset's synthetic cards are
+Luhn-valid. Detection still depends on format and policy, and contextual entities require
+optional detectors. Methodology and limitations: [`benchmarks/`](benchmarks/).
 
 ## What this is *not*
 

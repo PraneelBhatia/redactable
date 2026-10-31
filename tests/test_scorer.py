@@ -1,10 +1,6 @@
-"""Tests for the eval scorer — the heart of 'de-identification you can prove'.
+"""Full-span gates, exact/relaxed diagnostics, and explicit corpus coverage."""
 
-Matching is type-aware relaxed-overlap with greedy 1:1 pairing: a gold entity is
-recalled if a predicted span of the *same type* overlaps it. This mirrors how NER
-de-identification is evaluated (did we cover the sensitive characters?) rather than
-demanding exact byte boundaries.
-"""
+import pytest
 
 from redactable.eval.scorer import score
 from redactable.span import EntityType, Span
@@ -44,10 +40,38 @@ class TestMissedAndSpurious:
 
 
 class TestMatchingSemantics:
-    def test_overlap_counts_as_match(self):
+    @pytest.mark.parametrize("start,end", [(2, 3), (2, 9), (3, 10), (0, 6)])
+    def test_partial_overlap_does_not_pass_gate(self, start, end):
         gold = [sp(2, 10, EntityType.PERSON)]
-        pred = [sp(0, 6, EntityType.PERSON)]  # different boundaries, overlaps
-        assert score([(gold, pred)]).per_entity["PERSON"].recall == 1.0
+        pred = [sp(start, end, EntityType.PERSON)]
+        report = score([(gold, pred)], thresholds={"PERSON": 1.0})
+        assert report.per_entity["PERSON"].recall == 0.0
+        assert report.gate_passed is False
+        assert report.diagnostics["relaxed_overlap"]["PERSON"].recall == 1.0
+
+    def test_complete_larger_span_is_not_an_exact_match(self):
+        report = score([([sp(2, 10, EntityType.PERSON)], [sp(0, 12, EntityType.PERSON)])])
+        assert report.micro.recall == 1.0
+        assert report.diagnostics["exact"]["PERSON"].recall == 0.0
+
+    @pytest.mark.parametrize("second_start", [5, 6])
+    def test_split_spans_do_not_receive_full_entity_credit(self, second_start):
+        report = score([([sp(0, 10, EntityType.PERSON)],
+                         [sp(0, 5, EntityType.PERSON), sp(second_start, 10, EntityType.PERSON)])])
+        assert report.micro.recall == 0.0
+
+    def test_maximum_matching_does_not_depend_on_greedy_order(self):
+        gold = [sp(0, 5, EntityType.PERSON), sp(6, 10, EntityType.PERSON)]
+        pred = [sp(0, 10, EntityType.PERSON), sp(0, 5, EntityType.PERSON)]
+        assert score([(gold, pred)]).micro.recall == 1.0
+
+    def test_duplicate_prediction_is_a_false_positive(self):
+        s = sp(0, 5, EntityType.PERSON)
+        assert score([([s], [s, s])]).micro.fp == 1
+
+    def test_repeated_values_are_matched_by_position(self):
+        gold = [sp(0, 5, EntityType.PERSON), sp(6, 11, EntityType.PERSON)]
+        assert score([(gold, [gold[0]])]).micro.recall == 0.5
 
     def test_type_mismatch_is_not_a_match(self):
         gold = [sp(0, 5, EntityType.LOCATION)]
@@ -100,11 +124,27 @@ class TestRegressionGate:
         report = score([([sp(0, 5, EntityType.PERSON)], [])])
         assert report.gate_passed is None
 
-    def test_gate_skips_thresholded_types_absent_from_corpus(self):
-        # EMAIL has gold and is caught; US_SSN is thresholded but the corpus has no SSNs,
-        # so recall is unmeasurable and must NOT count as a failure.
+    def test_gate_fails_for_thresholded_types_absent_from_corpus(self):
         gold = [sp(0, 5, EntityType.EMAIL)]
         pred = [sp(0, 5, EntityType.EMAIL)]
         report = score([(gold, pred)], thresholds={"EMAIL": 0.9, "US_SSN": 0.99})
-        assert report.gate_passed is True
-        assert report.gate_failures == []
+        assert report.gate_passed is False
+        assert report.unmeasured_types == ["US_SSN"]
+        assert report.gate_failures[0].reason == "missing_support"
+        assert report.gate_failures[0].recall is None
+
+    @pytest.mark.parametrize("pairs", [[], [([], [])], [([], [sp(0, 5, EntityType.EMAIL)])]])
+    def test_empty_or_negative_only_corpus_cannot_pass(self, pairs):
+        report = score(pairs, thresholds={"EMAIL": 0.0})
+        assert report.gate_passed is False
+        assert report.gate_failures[0].reason == "missing_support"
+
+    @pytest.mark.parametrize("threshold", [float("nan"), float("inf"), -0.1, 1.1])
+    def test_invalid_threshold_rejected(self, threshold):
+        with pytest.raises(ValueError, match="thresholds"):
+            score([], thresholds={"EMAIL": threshold})
+
+    def test_policy_coverage_reports_ungated_and_unmeasured_types(self):
+        report = score([], thresholds={"EMAIL": 0.9}, expected_types={"EMAIL", "DATE"})
+        assert report.unmeasured_types == ["DATE", "EMAIL"]
+        assert report.ungated_types == ["DATE"]

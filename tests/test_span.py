@@ -1,5 +1,7 @@
 """Tests for the core data model: EntityType and Span."""
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from redactable.span import EntityType, Span
@@ -17,7 +19,7 @@ class TestEntityType:
             assert hasattr(EntityType, name)
 
     def test_entity_type_is_its_string_value(self):
-        # StrEnum: comparing to the bare string works (ergonomic in policies/JSON).
+        # String enum: comparing to the bare string works (ergonomic in policies/JSON).
         assert EntityType.EMAIL == "EMAIL"
         assert str(EntityType.PERSON) == "PERSON"
 
@@ -58,7 +60,7 @@ class TestSpan:
 
     def test_is_frozen(self):
         s = Span(0, 1, EntityType.EMAIL, "x")
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             s.start = 9  # type: ignore[misc]
 
     def test_overlaps_is_symmetric_and_half_open(self):

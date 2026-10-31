@@ -8,13 +8,13 @@ spans. Keeping it small, immutable, and validated keeps the rest of the system h
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 
 
-class EntityType(StrEnum):
+class EntityType(str, Enum):
     """The kinds of PII/PHI Redactable can detect.
 
-    A ``StrEnum`` so a member *is* its string value — ergonomic in YAML policies,
+    A string enum (including on Python 3.10) — ergonomic in YAML policies,
     JSON corpora, and audit manifests where we round-trip through plain strings.
     Policy packs may reference additional custom types as bare strings; this enum
     covers the built-in detectors.
@@ -35,6 +35,9 @@ class EntityType(StrEnum):
     PERSON = "PERSON"
     LOCATION = "LOCATION"
     ORG = "ORG"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 @dataclass(frozen=True, slots=True, repr=False)

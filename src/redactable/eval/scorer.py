@@ -1,13 +1,13 @@
 """Scoring engine: turn (gold, predicted) spans into per-entity precision/recall/F1.
 
-This is the asset competitors can't clone in a weekend: a reproducible number for
-how much PII a given engine actually catches, per entity type, with a gate that
-fails CI on regression. Matching is *type-aware relaxed overlap* with greedy 1:1
-pairing — the standard way de-identification recall is measured.
+The gate uses type-aware full-span containment: touching part of a sensitive value
+does not establish its removal. Exact-boundary and relaxed-overlap scores are
+separate diagnostics. All three use maximum one-to-one matching.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from redactable.span import Span
@@ -46,8 +46,9 @@ class EntityScore:
 @dataclass(frozen=True)
 class GateFailure:
     entity_type: str
-    recall: float
+    recall: float | None
     threshold: float
+    reason: str = "below_threshold"
 
 
 @dataclass
@@ -57,49 +58,74 @@ class EvalReport:
     macro: EntityScore
     gate_passed: bool | None = None
     gate_failures: list[GateFailure] = field(default_factory=list)
+    matching: str = "full_span"
+    unmeasured_types: list[str] = field(default_factory=list)
+    ungated_types: list[str] = field(default_factory=list)
+    diagnostics: dict[str, dict[str, EntityScore]] = field(default_factory=dict)
 
 
-def _match_type(golds: list[Span], preds: list[Span]) -> tuple[int, int, int]:
-    """Greedy 1:1 overlap matching within one entity type. Returns (tp, fp, fn)."""
-    matched_preds: set[int] = set()
-    tp = 0
-    for gold in golds:
-        for i, pred in enumerate(preds):
-            if i in matched_preds:
+def _match_type(golds: list[Span], preds: list[Span], mode: str) -> tuple[int, int, int]:
+    """Maximum 1:1 matching, independent of span order. Returns (tp, fp, fn)."""
+    def matches(gold: Span, pred: Span) -> bool:
+        if mode == "exact":
+            return gold.start == pred.start and gold.end == pred.end
+        if mode == "relaxed_overlap":
+            return gold.overlaps(pred)
+        return pred.contains(gold)
+
+    owners: dict[int, int] = {}
+
+    def assign(g: int, seen: set[int]) -> bool:
+        for p, pred in enumerate(preds):
+            if p in seen or not matches(golds[g], pred):
                 continue
-            if gold.overlaps(pred):
-                matched_preds.add(i)
-                tp += 1
-                break
+            seen.add(p)
+            if p not in owners or assign(owners[p], seen):
+                owners[p] = g
+                return True
+        return False
+
+    tp = sum(assign(g, set()) for g in range(len(golds)))
     fn = len(golds) - tp
-    fp = len(preds) - len(matched_preds)
+    fp = len(preds) - tp
     return tp, fp, fn
 
 
 def score(
     pairs: list[tuple[list[Span], list[Span]]],
     thresholds: dict[str, float] | None = None,
+    expected_types: set[str] | None = None,
 ) -> EvalReport:
     """Score predictions against gold across a corpus.
 
     Args:
         pairs: one ``(gold_spans, predicted_spans)`` tuple per example/document.
         thresholds: optional ``{entity_type: min_recall}``. When provided, the report's
-            ``gate_passed`` is set and any entity below its threshold is a ``GateFailure``.
+            missing gold support fails the gate with reason ``missing_support``.
+        expected_types: policy scope to include in the coverage report, even when absent.
     """
-    counts: dict[str, list[int]] = {}  # type -> [tp, fp, fn]
+    for threshold in (thresholds or {}).values():
+        if not math.isfinite(threshold) or not 0 <= threshold <= 1:
+            raise ValueError("recall thresholds must be finite numbers between 0 and 1")
+    required = set(expected_types or ()) | set(thresholds or ())
+    all_counts = {
+        mode: {t: [0, 0, 0] for t in required}
+        for mode in ("full_span", "exact", "relaxed_overlap")
+    }
 
     for gold_spans, pred_spans in pairs:
         types = {str(s.entity_type) for s in gold_spans} | {str(s.entity_type) for s in pred_spans}
         for t in types:
             golds = [s for s in gold_spans if str(s.entity_type) == t]
             preds = [s for s in pred_spans if str(s.entity_type) == t]
-            tp, fp, fn = _match_type(golds, preds)
-            bucket = counts.setdefault(t, [0, 0, 0])
-            bucket[0] += tp
-            bucket[1] += fp
-            bucket[2] += fn
+            for mode, counts in all_counts.items():
+                tp, fp, fn = _match_type(golds, preds, mode)
+                bucket = counts.setdefault(t, [0, 0, 0])
+                bucket[0] += tp
+                bucket[1] += fp
+                bucket[2] += fn
 
+    counts = all_counts["full_span"]
     per_entity = {
         t: EntityScore(entity_type=t, tp=c[0], fp=c[1], fn=c[2]) for t, c in sorted(counts.items())
     }
@@ -118,15 +144,24 @@ def score(
     macro_f1 = sum(s.f1 for s in per_entity.values()) / n
     macro = _MacroScore(precision=macro_p, recall=macro_r, f1=macro_f1)
 
-    report = EvalReport(per_entity=per_entity, micro=micro, macro=macro)
+    report = EvalReport(
+        per_entity=per_entity, micro=micro, macro=macro,
+        unmeasured_types=sorted(t for t in required if per_entity[t].support == 0),
+        ungated_types=sorted(set(per_entity) - set(thresholds or ())),
+        diagnostics={
+            mode: {t: EntityScore(t, *c) for t, c in sorted(buckets.items())}
+            for mode, buckets in all_counts.items() if mode != "full_span"
+        },
+    )
 
     if thresholds:
-        # Only gate types the corpus can actually measure (support > 0). A threshold on
-        # an entity type with no gold examples is unmeasurable, not a failure.
         failures = [
-            GateFailure(t, per_entity[t].recall, thr)
+            GateFailure(
+                t, per_entity[t].recall if per_entity[t].support else None, thr,
+                "below_threshold" if per_entity[t].support else "missing_support",
+            )
             for t, thr in thresholds.items()
-            if t in per_entity and per_entity[t].support > 0 and per_entity[t].recall < thr
+            if per_entity[t].support == 0 or per_entity[t].recall < thr
         ]
         report.gate_failures = failures
         report.gate_passed = not failures
