@@ -128,6 +128,7 @@ class DeterministicDetector:
     """Detects structured PII via regex, gated by checksums where one exists."""
 
     name = "deterministic"
+    supported_types = frozenset(str(rule.entity_type) for rule in _RULES)
 
     def detect(self, text: str) -> list[Span]:
         spans: list[Span] = []

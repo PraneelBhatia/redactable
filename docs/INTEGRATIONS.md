@@ -1,37 +1,32 @@
-# Integrating Redactable into your coding agent
+# Integrating Redactable into a client
 
-Three drop-in ways to scrub PII before it reaches an LLM, from "one line" to "fully automatic".
+Reversible tokenization replaces detected identifiers with consistent placeholders and
+restores them locally using a keymap. Detection is limited to the enabled detector and
+policy. It does not establish that arbitrary text contains no remaining PII.
 
-The shared idea: **reversible tokenization**. PII becomes consistent tokens (`[EMAIL_1]`) on
-the way out and is restored locally on the way back, so the model never sees real values but
-the round-trip stays coherent. (Everything runs on the deterministic engine — no model, no
-network — so it's safe in an always-on interceptor.)
-
-## 1. MCP server (the one-line drop-in)
-
-Works with any MCP-aware agent (Claude Code, Cursor, …).
+## MCP server
 
 ```bash
 pip install "redactable[mcp]"
-claude mcp add redactable -- redactable-mcp      # Claude Code
+claude mcp add redactable -- redactable-mcp
 ```
-or in `.mcp.json`:
+
+Or in `.mcp.json`:
+
 ```json
 { "mcpServers": { "redactable": { "command": "redactable-mcp" } } }
 ```
 
-Tools exposed:
-- `scrub(text, policy="pii-structured", reversible=true)` → `{redacted, entities, session}`
-- `restore(text, session)` → originals put back
-- `detect(text, policy)` → what PII is present, without changing anything
+Tools: `scrub(text, policy="pii-structured", reversible=true)`, `restore(text, session)`,
+and `detect(text, policy)`. The agent must choose to call them before sharing data; adding an
+MCP server does not automatically filter all model traffic.
 
-The agent calls `scrub` before sharing data and `restore` on the reply. *Model-invoked* — great
-for "scrub this before I send it"; for guaranteed automatic filtering, use #2 or #3.
+## Pre-send guardrail
 
-## 2. Pre-send hook (a guardrail)
-
-A Claude Code `UserPromptSubmit` hook that warns (or blocks) when a prompt contains PII.
-Ship-ready at [`hooks/redactable-userpromptsubmit.py`](../hooks/redactable-userpromptsubmit.py):
+[`hooks/redactable-userpromptsubmit.py`](../hooks/redactable-userpromptsubmit.py) checks a
+Claude Code user prompt. Default behavior is a non-blocking warning; `REDACTABLE_BLOCK=1`
+blocks detected identifiers. It does not rewrite the payload or cover every message,
+attachment or tool result.
 
 ```json
 "hooks": {
@@ -41,44 +36,43 @@ Ship-ready at [`hooks/redactable-userpromptsubmit.py`](../hooks/redactable-userp
   ]
 }
 ```
-Default: non-blocking warning in context. `REDACTABLE_BLOCK=1` blocks submission instead.
-A hook can *detect + warn/block* pre-send, but it can't silently rewrite the payload — for that,
-use #1 (model calls `scrub`) or #3.
 
-## 3. Local scrub proxy (fully automatic, any agent)
-
-The one point every agent shares is its HTTP call to the model — so intercept it:
+## Local proxy for non-streaming text
 
 ```bash
-redactable serve                                   # localhost:8080, Anthropic + OpenAI compatible
-export ANTHROPIC_BASE_URL=http://localhost:8080    # Claude Code
-# or:  aider --openai-api-base http://localhost:8080/v1
+redactable serve
+export OPENAI_BASE_URL=http://localhost:8080/v1
+# Or, for an Anthropic Messages client:
+export ANTHROPIC_BASE_URL=http://localhost:8080
 ```
 
-For every request the proxy tokenizes PII (`jane@acme.io` → `[EMAIL_1]`), injects a meta-prompt
-instructing the model to keep the placeholders **verbatim**, forwards to the real API with your
-key passed straight through, and restores the originals in the reply — both JSON and streamed
-(SSE, with a rolling buffer so a placeholder split across chunks is still restored). The model
-provider never sees real PII; the agent gets coherent output. Pure stdlib, nothing logged.
-Flags: `--policy --host --port --anthropic-url --openai-url`.
+The proxy accepts text-only OpenAI Chat Completions and Anthropic Messages. It scrubs every
+message and Anthropic's top-level system text, injects a placeholder-preservation prompt,
+forwards the transformed JSON, and restores placeholders in JSON replies. API credentials
+are passed to the configured upstream; request content is not logged by the proxy.
 
-> Verified end-to-end: upstream receives only tokens + the meta-prompt; the agent receives the
-> restored originals. Structured-PII values are JSON-safe; restoring contextual values that
-> contain quotes is a known edge for a later version.
+Streaming, tools, attachments, metadata, unknown fields, query strings, Responses/Codex,
+Google and other endpoints return errors **before any upstream request**. Streaming was
+disabled because raw byte replacement did not handle JSON delta boundaries or UTF-8 safely.
+Literal placeholder syntax is rejected to avoid re-identification collisions. Only supported
+deterministic entity types can be selected; this proxy does not load contextual models.
 
-**This is the "any harness" path.** Every harness ends in the same HTTPS call to a model, so the
-proxy covers all of them with one setup — see the copy-paste, per-harness runbook (with a
-self-verification test) in [`AGENT-SETUP.md`](AGENT-SETUP.md). Exception: harnesses that auth via
-a **subscription OAuth** account (e.g. opencode's ChatGPT login) hit a different backend the proxy
-can't reach — use an in-harness adapter instead, like the opencode plugin in
-[`integrations/opencode/`](../integrations/opencode/).
+This is a compatibility restriction: many coding agents require tools or streaming and
+cannot use this version of the proxy. OAuth clients that ignore the base URL bypass it
+entirely. The proxy cannot detect or block traffic it never receives. In-harness adapters,
+including [`integrations/opencode/`](../integrations/opencode/), require separate verification.
 
-## Own the agent code? Wrap the call directly
+The exact schema, header boundary and a synthetic mock-upstream verification are in
+[`AGENT-SETUP.md`](AGENT-SETUP.md). Flags: `--policy --host --port --anthropic-url --openai-url`.
+
+## Wrap a call in your own application
 
 ```python
 from redactable.service import RedactionService
 svc = RedactionService()
-out = svc.scrub(user_text)                 # out["redacted"], out["session"]
-reply = call_llm(out["redacted"])          # model sees [EMAIL_1], never the real value
-final = svc.restore(reply, out["session"]) # restore locally
+out = svc.scrub(user_text)
+reply = call_llm(out["redacted"])
+final = svc.restore(reply, out["session"])
 ```
+
+Review and test all fields your application sends. This example transforms `user_text` only.

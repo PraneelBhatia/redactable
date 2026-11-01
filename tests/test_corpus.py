@@ -75,6 +75,38 @@ class TestValidation:
 
 
 class TestEvaluate:
+    def test_partial_detection_leaves_sensitive_suffix_and_fails_gate(self):
+        from redactable.eval.corpus import Example
+        from redactable.span import Span
+        from redactable.tokenization import Tokenizer
+
+        text = "a@example.com"
+
+        class Partial:
+            name = "synthetic-partial"
+
+            def detect(self, source):
+                return [Span(0, 1, EntityType.EMAIL, source[:1])]
+
+        gold = [Span(0, len(text), EntityType.EMAIL, text)]
+        report = evaluate(Partial(), [Example(text, gold)], thresholds={"EMAIL": 1.0})
+        transformed = Tokenizer().apply(text, Partial().detect(text)).text
+        assert transformed == "[EMAIL_1]@example.com"
+        assert report.micro.recall == 0.0
+        assert report.gate_passed is False
+
+    def test_complete_detection_replaces_every_sensitive_character(self):
+        from redactable.eval.corpus import Example
+        from redactable.span import Span
+        from redactable.tokenization import Tokenizer
+
+        text = "a@example.com"
+        detector = DeterministicDetector()
+        report = evaluate(detector, [Example(text, [Span(0, len(text), EntityType.EMAIL, text)])],
+                          thresholds={"EMAIL": 1.0})
+        assert Tokenizer().apply(text, detector.detect(text)).text == "[EMAIL_1]"
+        assert report.gate_passed is True
+
     def test_evaluate_runs_detector_over_corpus(self, tmp_path):
         p = write_jsonl(
             tmp_path / "c.jsonl",

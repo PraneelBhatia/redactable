@@ -76,12 +76,41 @@ class TestEval:
         assert "recall" in out.lower()
 
     def test_gate_passes_when_recall_met(self, tmp_path):
+        policy = tmp_path / "email.yaml"
+        policy.write_text("name: email\nentities: {EMAIL: mask}\nthresholds: {EMAIL: 1.0}\n")
         corpus = write_corpus(
             tmp_path / "c.jsonl",
             [{"text": "ping a@b.com", "spans": [{"start": 5, "end": 12, "type": "EMAIL"}]}],
         )
-        rc = main(["eval", "--corpus", corpus, "--policy", "hipaa-safe-harbor", "--gate"])
+        rc = main(["eval", "--corpus", corpus, "--policy", str(policy), "--gate"])
         assert rc == 0
+
+    def test_missing_support_has_machine_reason_and_gate_exit(self, tmp_path, capsys):
+        corpus = write_corpus(tmp_path / "c.jsonl", [])
+        rc = main(["eval", "--corpus", corpus, "--policy", "pii-structured", "--gate", "--json"])
+        assert rc == 3
+        captured = capsys.readouterr()
+        report = json.loads(captured.out)
+        assert report["matching"] == "full_span"
+        assert report["gate_passed"] is False
+        assert all(f["reason"] == "missing_support" for f in report["gate_failures"])
+        assert all(f["recall"] is None for f in report["gate_failures"])
+        assert "missing_support" in captured.err
+
+    def test_gate_requires_thresholds(self, tmp_path):
+        policy = tmp_path / "empty.yaml"
+        policy.write_text("name: empty\nentities: {EMAIL: mask}\n")
+        corpus = write_corpus(tmp_path / "c.jsonl", [])
+        assert main(["eval", "--corpus", corpus, "--policy", str(policy), "--gate"]) == 1
+
+    def test_gate_detector_failure_is_not_a_pass(self, tmp_path, monkeypatch):
+        class Broken:
+            def detect(self, text):
+                raise RuntimeError("synthetic detector failure")
+
+        monkeypatch.setattr("redactable.cli._build_detectors", lambda *args: [Broken()])
+        corpus = write_corpus(tmp_path / "c.jsonl", [{"text": "synthetic", "spans": []}])
+        assert main(["eval", "--corpus", corpus, "--policy", "pii-structured", "--gate"]) == 1
 
     def test_gate_fails_on_missed_in_scope_entity(self, tmp_path):
         # PERSON is in scope with a 0.85 threshold; the deterministic engine can't find

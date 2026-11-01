@@ -8,6 +8,9 @@ without ever putting original values in the manifest.
 
 import hashlib
 
+import pytest
+
+from redactable.detectors.deterministic import DeterministicDetector
 from redactable.policy import Policy
 from redactable.redactor import Redactor
 from redactable.span import EntityType, Span
@@ -30,6 +33,18 @@ def write_policy(tmp_path, body):
 
 
 class TestEndToEndWithHipaa:
+    def test_detector_failure_aborts_instead_of_returning_partial_redaction(self):
+        class Broken:
+            name = "synthetic-broken"
+
+            def detect(self, text):
+                raise RuntimeError("synthetic canary@example.com")
+
+        redactor = Redactor.from_policy("pii-structured", [DeterministicDetector(), Broken()])
+        with pytest.raises(RuntimeError, match="redaction aborted") as exc:
+            redactor.redact("canary@example.com")
+        assert "canary@example.com" not in str(exc.value)
+
     def test_masks_email_and_ssn(self):
         r = Redactor.from_policy("hipaa-safe-harbor")
         out = r.redact("Email a@b.com SSN 123-45-6789")

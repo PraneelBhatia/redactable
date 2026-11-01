@@ -94,4 +94,4 @@ def evaluate(
         )
         for ex in examples
     ]
-    return score(pairs, thresholds=thresholds)
+    return score(pairs, thresholds=thresholds, expected_types=scope)

@@ -11,4 +11,4 @@ from redactable.detectors.deterministic import DeterministicDetector
 # GlinerDetector intentionally not imported here — importing it is cheap (the heavy
 # gliner dependency loads lazily), but keeping it explicit signals it's the optional tier.
 
-__all__ = ["Detector", "CompositeDetector", "DeterministicDetector"]
+__all__ = ["CompositeDetector", "Detector", "DeterministicDetector"]

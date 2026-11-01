@@ -61,8 +61,10 @@ class Redactor:
         for detector in self.detectors:
             try:
                 spans.extend(detector.detect(text))
-            except Exception:  # noqa: BLE001 — a failing optional detector must not break the core
-                continue
+            except Exception:  # noqa: BLE001 — sanitize arbitrary detector failures
+                # Errors may embed source text or model responses. Abort rather than
+                # return partially protected output, and do not expose error content.
+                raise RuntimeError("configured detector failed; redaction aborted") from None
         return spans
 
     def redact(self, text: str) -> RedactionOutcome:

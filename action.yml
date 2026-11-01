@@ -35,17 +35,28 @@ runs:
         python-version: ${{ inputs.python-version }}
     - name: Install Redactable
       shell: bash
+      env:
+        REDACTABLE_SOURCE: ${{ github.action_path }}
+        REDACTABLE_NER: ${{ inputs.ner }}
       run: |
-        if [ "${{ inputs.ner }}" = "true" ]; then
-          pip install "redactable[ner]"
+        if [ "$REDACTABLE_NER" = "true" ]; then
+          pip install "${REDACTABLE_SOURCE}[ner]"
         else
-          pip install redactable
+          pip install "$REDACTABLE_SOURCE"
         fi
     - name: Run recall gate
       shell: bash
+      env:
+        REDACTABLE_CORPUS: ${{ inputs.corpus }}
+        REDACTABLE_POLICY: ${{ inputs.policy }}
+        REDACTABLE_NER: ${{ inputs.ner }}
       run: |
+        extra=()
+        if [ "$REDACTABLE_NER" = "true" ]; then
+          extra+=(--ner)
+        fi
         redactable eval \
-          --corpus "${{ inputs.corpus }}" \
-          --policy "${{ inputs.policy }}" \
-          ${{ inputs.ner == 'true' && '--ner' || '' }} \
+          --corpus "$REDACTABLE_CORPUS" \
+          --policy "$REDACTABLE_POLICY" \
+          "${extra[@]}" \
           --gate
